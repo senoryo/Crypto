@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: crypto-trading
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_all.py --no-gui
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+    healthCheckPath: /api/status

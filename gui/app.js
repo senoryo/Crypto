@@ -6,11 +6,22 @@
     "use strict";
 
     // --- Configuration ---
-    const WS_URLS = {
-        MKTDATA: "ws://localhost:8081",
-        GUIBROKER: "ws://localhost:8082",
-        POSMANAGER: "ws://localhost:8085",
-    };
+    const WS_URLS = (function () {
+        const isLocal = location.hostname === "localhost" && location.port === "8080";
+        if (isLocal) {
+            return {
+                MKTDATA: "ws://localhost:8081",
+                GUIBROKER: "ws://localhost:8082",
+                POSMANAGER: "ws://localhost:8085",
+            };
+        }
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        return {
+            MKTDATA: proto + "//" + location.host + "/ws/mktdata",
+            GUIBROKER: proto + "//" + location.host + "/ws/guibroker",
+            POSMANAGER: proto + "//" + location.host + "/ws/posmanager",
+        };
+    })();
 
     const SYMBOLS = ["BTC/USD", "ETH/USD", "SOL/USD", "ADA/USD", "DOGE/USD"];
 

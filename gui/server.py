@@ -11,7 +11,7 @@ import socketserver
 import os
 import sys
 
-PORT = 8080
+PORT = 8080  # Always internal; proxy owns the PORT env var on Render
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 # Import config (add parent dir to path if needed)
@@ -354,8 +354,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        logger.info(f"Serving on http://localhost:{PORT}")
+    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
+        logger.info(f"Serving on http://0.0.0.0:{PORT}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

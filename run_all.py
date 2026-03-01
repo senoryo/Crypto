@@ -13,9 +13,9 @@ Component startup order (respects dependencies):
     4. OM        (port 8083) - needs EXCHCONN, POSMANAGER
     5. GUIBROKER (port 8082) - needs OM
     6. GUI       (port 8080) - needs GUIBROKER, MKTDATA, POSMANAGER
+    7. PROXY     (PORT env)  - only on Render / when PORT is set
 """
 
-import asyncio
 import subprocess
 import sys
 import time
@@ -25,6 +25,13 @@ import webbrowser
 
 PYTHON = sys.executable
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect Render / proxy mode: RENDER=true or PORT env set to non-8080 value
+_port_env = os.environ.get("PORT", "")
+USE_PROXY = (
+    os.environ.get("RENDER", "").lower() == "true"
+    or (_port_env != "" and _port_env != "8080")
+)
 
 COMPONENTS = [
     {
@@ -66,15 +73,42 @@ COMPONENTS = [
 ]
 
 
+def _shutdown(processes):
+    """Terminate all child processes gracefully."""
+    print("\n\n  Shutting down all components...")
+    for name, proc in reversed(processes):
+        if proc.poll() is None:
+            print(f"  Stopping {name} (PID: {proc.pid})...")
+            proc.terminate()
+    time.sleep(2)
+    for name, proc in processes:
+        if proc.poll() is None:
+            print(f"  Force killing {name}...")
+            proc.kill()
+    print("  All components stopped.")
+
+
 def start_all(open_browser: bool = True):
     """Start all components in order."""
     processes = []
 
+    components = list(COMPONENTS)
+    if USE_PROXY:
+        proxy_port = int(os.environ.get("PORT", 10000))
+        components.append({
+            "name": "PROXY",
+            "module": "proxy",
+            "port": proxy_port,
+            "delay_after": 0.5,
+        })
+
     print("=" * 60)
     print("  CRYPTO TRADING SYSTEM - Starting All Components")
+    if USE_PROXY:
+        print(f"  (Proxy mode: all traffic via port {proxy_port})")
     print("=" * 60)
 
-    for comp in COMPONENTS:
+    for comp in components:
         name = comp["name"]
         module = comp["module"]
         port = comp["port"]
@@ -94,7 +128,11 @@ def start_all(open_browser: bool = True):
     print("\n" + "=" * 60)
     print("  All components started!")
     print("=" * 60)
-    print(f"\n  GUI:        http://localhost:8080")
+
+    if USE_PROXY:
+        print(f"\n  PROXY:      http://0.0.0.0:{proxy_port}")
+    else:
+        print(f"\n  GUI:        http://localhost:8080")
     print(f"  MKTDATA:    ws://localhost:8081")
     print(f"  GUIBROKER:  ws://localhost:8082")
     print(f"  OM:         ws://localhost:8083")
@@ -102,7 +140,14 @@ def start_all(open_browser: bool = True):
     print(f"  POSMANAGER: ws://localhost:8085")
     print(f"\n  Press Ctrl+C to stop all components\n")
 
-    if open_browser:
+    # SIGTERM handler for Render's graceful shutdown
+    def _sigterm_handler(signum, frame):
+        _shutdown(processes)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+
+    if open_browser and not USE_PROXY:
         time.sleep(1)
         webbrowser.open("http://localhost:8080")
 
@@ -116,17 +161,7 @@ def start_all(open_browser: bool = True):
                     print(f"\n  WARNING: {name} exited with code {ret} (check logs/{name}.log)")
             time.sleep(2)
     except KeyboardInterrupt:
-        print("\n\n  Shutting down all components...")
-        for name, proc in reversed(processes):
-            print(f"  Stopping {name} (PID: {proc.pid})...")
-            proc.terminate()
-        # Give them a moment to terminate gracefully
-        time.sleep(2)
-        for name, proc in processes:
-            if proc.poll() is None:
-                print(f"  Force killing {name}...")
-                proc.kill()
-        print("  All components stopped.")
+        _shutdown(processes)
 
 
 if __name__ == "__main__":
