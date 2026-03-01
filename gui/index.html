@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Trading Terminal</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+    <!-- Header -->
+    <div id="header">
+        <h1>CRYPTO TRADING TERMINAL</h1>
+        <div class="conn-status">
+            <span class="header-clock" id="header-clock">--:--:--</span>
+            <span class="env-badge" id="env-badge">LOADING</span>
+            <button class="status-btn" id="status-btn" onclick="openStatusModal()" title="System Status"><span class="status-btn-dot" id="status-btn-dot"></span> SYSTEM STATUS</button>
+            <button class="config-btn" id="risk-btn" onclick="openRiskModal()" title="Risk Limits">RISK LIMITS</button>
+            <button class="config-btn" id="config-btn" onclick="openConfigModal()" title="System Configuration">CONFIG</button>
+            <button class="config-btn" id="troubleshoot-btn" onclick="openTroubleshootModal()" title="AI Troubleshoot">TROUBLESHOOT</button>
+            <button class="config-btn" id="records-btn" onclick="openRecordsModal()" title="Message Records">RECORDS</button>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div id="main">
+        <!-- Left Column: Market Data + Order Entry -->
+        <div id="left-col">
+            <!-- Market Data Panel -->
+            <div class="panel" id="market-data-panel">
+                <div class="panel-header">
+                    <span>Market Data</span>
+                </div>
+                <div class="panel-body">
+                    <table class="md-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Bid</th>
+                                <th>Ask</th>
+                                <th>Sprd</th>
+                                <th>Last</th>
+                                <th>Mid</th>
+                                <th>Vol</th>
+                            </tr>
+                        </thead>
+                        <tbody id="md-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Order Entry Panel -->
+            <div class="panel" id="order-entry-panel">
+                <div class="panel-header">
+                    <span>Order Entry</span>
+                </div>
+                <div class="panel-body">
+                    <form class="order-form" id="order-form" autocomplete="off">
+                        <div class="form-row">
+                            <div class="form-group" style="flex:2">
+                                <label>Symbol</label>
+                                <select id="oe-symbol">
+                                    <option value="BTC/USD">BTC/USD</option>
+                                    <option value="ETH/USD">ETH/USD</option>
+                                    <option value="SOL/USD">SOL/USD</option>
+                                    <option value="ADA/USD">ADA/USD</option>
+                                    <option value="DOGE/USD">DOGE/USD</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select id="oe-ordtype" onchange="onOrdTypeChange()">
+                                    <option value="LIMIT">LIMIT</option>
+                                    <option value="MARKET">MARKET</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Exchange</label>
+                                <select id="oe-exchange">
+                                    <option value="AUTO">AUTO</option>
+                                    <option value="BINANCE">BINANCE</option>
+                                    <option value="COINBASE">COINBASE</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Side</label>
+                                <div class="side-toggle">
+                                    <button type="button" class="side-btn buy active" id="oe-buy" onclick="setSide('BUY')">BUY</button>
+                                    <button type="button" class="side-btn sell" id="oe-sell" onclick="setSide('SELL')">SELL</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Quantity</label>
+                                <input type="number" id="oe-qty" step="any" min="0" placeholder="0.00" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Price <span class="spread-info" id="oe-spread"></span></label>
+                                <input type="number" id="oe-price" step="any" min="0" placeholder="0.00">
+                            </div>
+                        </div>
+                        <div class="form-row oe-info-row">
+                            <span class="oe-notional" id="oe-notional"></span>
+                        </div>
+                        <button type="submit" class="submit-btn buy" id="oe-submit">BUY</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Order Blotter -->
+        <div class="panel" id="blotter-panel" style="grid-column:2; grid-row:1;">
+            <div class="panel-header">
+                <div class="blotter-tabs">
+                    <button class="blotter-tab active" id="tab-orders" onclick="switchBlotterTab('orders')">Orders</button>
+                    <button class="blotter-tab" id="tab-trades" onclick="switchBlotterTab('trades')">Trades</button>
+                </div>
+                <div class="blotter-header-right">
+                    <span class="blotter-count" id="blotter-count">0 orders</span>
+                    <button class="btn-sm btn-cancel-all" onclick="cancelAllOrders()" title="Cancel All Active Orders">CANCEL ALL</button>
+                </div>
+            </div>
+            <div class="panel-body" id="orders-body">
+                <table class="blotter-table">
+                    <thead>
+                        <tr>
+                            <th>ClOrdID</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Filled</th>
+                            <th>AvgPx</th>
+                            <th>Exchange</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blotter-tbody"></tbody>
+                </table>
+            </div>
+            <div class="panel-body" id="trades-body" style="display:none">
+                <table class="blotter-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Exchange</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trades-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Positions Panel -->
+        <div class="panel" id="positions-panel" style="grid-column:2; grid-row:2;">
+            <div class="panel-header">
+                <span>Positions</span>
+                <button class="btn-sm btn-flatten-all" onclick="flattenAll()" title="Close All Positions">FLATTEN ALL</button>
+            </div>
+            <div class="panel-body">
+                <table class="pos-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Dir</th>
+                            <th>Qty</th>
+                            <th>Avg Cost</th>
+                            <th>Mkt Price</th>
+                            <th>Unrealized PnL</th>
+                            <th>Realized PnL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pos-tbody"></tbody>
+                </table>
+            </div>
+            <div class="pnl-chart-container" id="pnl-chart-container">
+                <canvas id="pnl-chart" width="600" height="50"></canvas>
+            </div>
+            <div class="pos-summary" id="pos-summary">
+                <span>Equity: <strong id="total-equity" class="pnl-zero">0.00</strong></span>
+                <span>Unrealized: <strong id="total-upnl">0.00</strong></span>
+                <span>Realized: <strong id="total-rpnl">0.00</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Amend Modal -->
+<div class="modal-overlay" id="amend-modal">
+    <div class="modal">
+        <h3>Amend Order</h3>
+        <input type="hidden" id="amend-clordid">
+        <div class="form-group">
+            <label>Order</label>
+            <input type="text" id="amend-info" disabled>
+        </div>
+        <div class="form-group">
+            <label>New Quantity</label>
+            <input type="number" id="amend-qty" step="any" min="0">
+        </div>
+        <div class="form-group">
+            <label>New Price</label>
+            <input type="number" id="amend-price" step="any" min="0">
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeAmendModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="submitAmend()">Amend</button>
+        </div>
+    </div>
+</div>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="config-modal">
+    <div class="modal config-modal">
+        <h3>System Configuration</h3>
+        <div id="config-body" class="config-body">Loading...</div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeConfigModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Status Modal -->
+<div class="modal-overlay" id="status-modal">
+    <div class="modal status-modal">
+        <h3>System Architecture</h3>
+        <div id="status-body" class="status-body">Loading...</div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeStatusModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Limits Modal -->
+<div class="modal-overlay" id="risk-modal">
+    <div class="modal risk-modal">
+        <h3>Risk Limits</h3>
+        <div id="risk-body" class="risk-body">Loading...</div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeRiskModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="saveRiskLimits()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Troubleshoot Modal -->
+<div class="modal-overlay" id="troubleshoot-modal">
+    <div class="modal troubleshoot-modal">
+        <h3>AI Troubleshoot</h3>
+        <div class="troubleshoot-body">
+            <textarea id="troubleshoot-input" class="troubleshoot-input" placeholder="Ask about system architecture, order routing, debugging..." rows="3"></textarea>
+            <button class="modal-btn primary troubleshoot-send-btn" id="troubleshoot-send" onclick="sendTroubleshoot()">Send</button>
+            <div id="troubleshoot-response" class="troubleshoot-response"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeTroubleshootModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Records Modal -->
+<div class="modal-overlay" id="records-modal">
+    <div class="modal records-modal">
+        <h3>Message Records</h3>
+        <div class="records-toolbar">
+            <select id="records-component">
+                <option value="">All Components</option>
+                <option value="OM">OM</option>
+                <option value="GUIBROKER">GUIBROKER</option>
+                <option value="EXCHCONN">EXCHCONN</option>
+                <option value="MKTDATA">MKTDATA</option>
+                <option value="POSMANAGER">POSMANAGER</option>
+                <option value="GUI">GUI</option>
+            </select>
+            <select id="records-direction">
+                <option value="">All Directions</option>
+                <option value="RECV">RECV</option>
+                <option value="SEND">SEND</option>
+            </select>
+            <input type="text" id="records-search" placeholder="Search descriptions..." autocomplete="off">
+            <select id="records-limit">
+                <option value="50">50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="200" selected>200 rows</option>
+                <option value="500">500 rows</option>
+            </select>
+            <button class="modal-btn primary" onclick="loadRecords()">Refresh</button>
+        </div>
+        <div id="records-body" class="records-body">
+            <span style="color:var(--text-muted)">Click Refresh to load messages.</span>
+        </div>
+        <div id="records-detail" class="records-detail" style="display:none;">
+            <div class="records-detail-header">
+                <span class="records-detail-title">Raw Message</span>
+                <button class="modal-btn" onclick="closeRecordDetail()">Back</button>
+            </div>
+            <pre id="records-detail-content" class="records-detail-content"></pre>
+        </div>
+        <div class="records-footer">
+            <span id="records-count" class="records-count"></span>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn" onclick="closeRecordsModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notifications -->
+<div id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

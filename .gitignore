@@ -1,0 +1,23 @@
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Local settings
+.claude/settings.local.json
+
+# Pip artifacts
+=*
+
+# Agent logs (reports are kept, logs are not)
+agent_reports/*.log

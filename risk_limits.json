@@ -1,0 +1,18 @@
+{
+  "max_order_qty": {
+    "BTC/USD": 0.0001,
+    "ETH/USD": 0.0001,
+    "SOL/USD": 0.0001,
+    "ADA/USD": 0.0001,
+    "DOGE/USD": 0.0001
+  },
+  "max_order_notional": 10,
+  "max_position_qty": {
+    "BTC/USD": 0.001,
+    "ETH/USD": 0.001,
+    "SOL/USD": 0.001,
+    "ADA/USD": 0.001,
+    "DOGE/USD": 0.001
+  },
+  "max_open_orders": 3
+}
