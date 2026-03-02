@@ -21,6 +21,11 @@ from shared.logging_config import setup_component_logging, log_recv, log_send
 from shared.ws_transport import WSServer
 
 from exchconn.binance_sim import BinanceSimulator
+from exchconn.kraken_sim import KrakenSimulator
+from exchconn.bybit_sim import BybitSimulator
+from exchconn.okx_sim import OKXSimulator
+from exchconn.bitfinex_sim import BitfinexSimulator
+from exchconn.htx_sim import HTXSimulator
 
 if USE_COINBASE_FIX:
     from exchconn.coinbase_fix_adapter import CoinbaseFIXAdapter as CoinbaseExchange
@@ -54,6 +59,11 @@ class ExchangeConnector:
         self._exchanges = {
             "BINANCE": BinanceSimulator(),
             "COINBASE": CoinbaseExchange(),
+            "KRAKEN": KrakenSimulator(),
+            "BYBIT": BybitSimulator(),
+            "OKX": OKXSimulator(),
+            "BITFINEX": BitfinexSimulator(),
+            "HTX": HTXSimulator(),
         }
 
         # Set report callbacks so exchanges can send reports back through us

@@ -39,6 +39,7 @@ class Tag:
     MsgType = "35"
     ClOrdID = "11"
     CumQty = "14"
+    ExecID = "17"
     AvgPx = "6"
     LastPx = "31"
     LastQty = "32"

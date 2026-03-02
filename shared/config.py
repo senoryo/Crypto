@@ -108,15 +108,65 @@ EXCHANGES = {
             "DOGE/USD": "DOGE-USD",
         },
     },
+    "KRAKEN": {
+        "name": "Kraken",
+        "symbols": {
+            "BTC/USD": "XXBTZUSD",
+            "ETH/USD": "XETHZUSD",
+            "SOL/USD": "SOLUSD",
+            "ADA/USD": "ADAUSD",
+            "DOGE/USD": "XDGUSD",
+        },
+    },
+    "BYBIT": {
+        "name": "Bybit",
+        "symbols": {
+            "BTC/USD": "BTCUSDT",
+            "ETH/USD": "ETHUSDT",
+            "SOL/USD": "SOLUSDT",
+            "ADA/USD": "ADAUSDT",
+            "DOGE/USD": "DOGEUSDT",
+        },
+    },
+    "OKX": {
+        "name": "OKX",
+        "symbols": {
+            "BTC/USD": "BTC-USDT",
+            "ETH/USD": "ETH-USDT",
+            "SOL/USD": "SOL-USDT",
+            "ADA/USD": "ADA-USDT",
+            "DOGE/USD": "DOGE-USDT",
+        },
+    },
+    "BITFINEX": {
+        "name": "Bitfinex",
+        "symbols": {
+            "BTC/USD": "tBTCUSD",
+            "ETH/USD": "tETHUSD",
+            "SOL/USD": "tSOLUSD",
+            "ADA/USD": "tADAUSD",
+            "DOGE/USD": "tDOGEUSD",
+        },
+    },
+    "HTX": {
+        "name": "HTX",
+        "symbols": {
+            "BTC/USD": "btcusdt",
+            "ETH/USD": "ethusdt",
+            "SOL/USD": "solusdt",
+            "ADA/USD": "adausdt",
+            "DOGE/USD": "dogeusdt",
+        },
+    },
 }
 
 # Default exchange routing: symbol -> preferred exchange
 DEFAULT_ROUTING = {
     "BTC/USD": "BINANCE",
-    "ETH/USD": "BINANCE",
+    "ETH/USD": "KRAKEN",
     "SOL/USD": "COINBASE",
-    "ADA/USD": "BINANCE",
-    "DOGE/USD": "COINBASE",
+    "ADA/USD": "OKX",
+    "DOGE/USD": "BYBIT",
 }
 
 # Order sides

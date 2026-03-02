@@ -436,3 +436,38 @@ All 238 tests pass. No regressions introduced.
 | `gui/app.js` | gui | order_ack handler, confirm dialogs, keyboard shortcuts |
 | `gui/server.py` | gui | empty body check, SSE error format |
 | `tests/shared/test_message_store.py` | (test) | Reset persistent connection between tests |
+
+---
+
+## Incident Report: Mobile Responsive Regressions (2026-03-01)
+
+### Issues Triaged
+
+**Issue 1: Desktop — Duplicate white buttons in header**
+- **Symptoms**: 5 unstyled white buttons (System Status, Risk Limits, Configuration, Troubleshoot, Records) appeared in the desktop header, duplicating the existing styled buttons.
+- **Where**: `gui/index.html` lines 24-30 (`<nav id="header-menu">`), `gui/styles.css` desktop defaults
+- **Root cause**: The mobile header menu `<nav id="header-menu">` was added to the HTML for the hamburger dropdown, but had no `display: none` default outside the `@media` block. On desktop (above 768px), the media query doesn't apply, so the nav rendered with default browser styling — visible, unstyled block.
+
+**Issue 2: Mobile — Only market data visible, completely unusable**
+- **Symptoms**: On mobile viewports, only the market data panel showed with ticking prices. No tab bar, no hamburger menu, no way to navigate to other panels.
+- **Where**: `gui/styles.css` lines 1885-1892 (desktop defaults placed after media query)
+- **Root cause**: CSS cascade ordering bug. The desktop defaults (`#mobile-tabs { display: none }`, `#header-menu-btn { display: none }`) were placed AFTER the `@media (max-width: 768px)` block. Both rules have the same selector specificity (ID selector). When both match on a mobile viewport, the last one in source order wins — so `display: none` always won, hiding the tab bar and hamburger button even on mobile.
+
+### Fixes Applied
+Both issues were single-file CSS fixes in `gui/styles.css`:
+1. Added `#header-menu { display: none; }` to desktop defaults
+2. Moved all three desktop defaults (`#header-menu-btn`, `#header-menu`, `#mobile-tabs`) to BEFORE the `@media` block
+3. Removed the duplicate defaults that were incorrectly placed after the media query
+
+No feature_builder dispatch was needed — fixes were trivial and confined to a single file.
+
+### Analysis Agent Updates
+
+| Agent | Themes Added | Theme Titles |
+|-------|-------------|-------------|
+| ux_reviewer | 2 | Mobile-only elements must have hidden default BEFORE media query; Responsive additions must not introduce visible artifacts on unmodified viewport |
+| bug_hunter | 1 | CSS source order determines override precedence at equal specificity |
+| supervisor | 1 | Responsive UI additions require dual-viewport review pass before merge |
+
+### Systemic Observation
+This incident reveals a **gap in frontend review**: the agent team had no acceptance criteria for visual verification on multiple viewports. Backend tests (pytest) passed because they don't exercise CSS rendering. Future responsive work should include explicit viewport verification steps in task descriptions, and the ux_reviewer agent should flag any `@media` blocks where cascade ordering of defaults vs overrides is incorrect.

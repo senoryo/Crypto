@@ -86,4 +86,7 @@ Write a summary to `agent_reports/supervisor.md` containing:
 - **Agents should catch classes, not instances**: The goal is that an agent reading its Learned Themes section can catch a bug it has never seen before, because it understands the underlying principle.
 
 ## Learned Themes
-*(Empty — this agent also learns from experience)*
+
+### Theme: Responsive UI additions require a dual-viewport review pass before merge
+When mobile/responsive support is added to a desktop-only UI, the implementation must be verified on BOTH viewports before declaring it complete. A feature builder working on mobile may introduce regressions visible only on desktop (new elements without hidden defaults) or bugs visible only on mobile (cascade ordering). The supervisor should always require explicit verification on both the original and new viewport as an acceptance criterion.
+**Origin**: Mobile responsive feature passed all backend tests but shipped with desktop-visible duplicate buttons and a completely non-functional mobile tab bar due to CSS cascade ordering.

@@ -166,6 +166,24 @@ class BinanceSimulator:
         ord_type = fix_msg.get(Tag.OrdType)
         price = float(fix_msg.get(Tag.Price, "0"))
 
+        # Reject orders for unsupported symbols (zero price)
+        sim_price = self._get_current_price(symbol)
+        if sim_price <= 0:
+            reject = execution_report(
+                cl_ord_id=cl_ord_id,
+                order_id="NONE",
+                exec_type=ExecType.Rejected,
+                ord_status=OrdStatus.Rejected,
+                symbol=symbol,
+                side=side,
+                leaves_qty=0.0,
+                cum_qty=0.0,
+                avg_px=0.0,
+                text=f"Unsupported symbol: {symbol}",
+            )
+            await self._send_report(reject)
+            return
+
         order_id = self._next_order_id()
         order = SimulatedOrder(order_id, cl_ord_id, symbol, side, qty, ord_type, price)
         self._orders[order_id] = order
@@ -200,7 +218,6 @@ class BinanceSimulator:
     async def _execute_fill(self, order: SimulatedOrder, fill_price: float):
         """Execute fills for an order, potentially in multiple chunks."""
         try:
-            remaining = order.leaves_qty
             chunks = order.fill_chunks - order.fills_done
             if chunks <= 0:
                 chunks = 1

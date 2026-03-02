@@ -64,3 +64,11 @@ When two shortcuts are logical pairs (BUY/SELL, Open/Close, Undo/Redo), they mus
 ### Theme: Protocol bridge layers should not silently discard message types that the upstream produces
 When a protocol bridge (e.g., JSON-to-FIX translator) receives a message type that is valid in the upstream protocol but has no handler, it should either process it or explicitly log the drop. Silent drops cause invisible feature gaps where the sender believes the message was delivered but the receiver never acted on it.
 **Origin**: GUI's `onBrokerMessage()` silently dropped `order_ack` messages from GUIBROKER, causing orders to not appear in the blotter until the first execution report arrived.
+
+### Theme: Mobile-only elements must have their hidden default BEFORE the media query that reveals them
+When adding UI elements that should only appear on mobile (tab bars, hamburger menus), the `display: none` default must be declared BEFORE the `@media` block. If placed after, CSS cascade ordering causes the default to override the media query rule at the same specificity, making the element invisible on all viewports. This is a general CSS cascade principle: overrides must come later in source order than the rules they intend to override.
+**Origin**: Mobile tab bar and hamburger button were hidden on mobile because their `display: none` defaults were placed after the `@media (max-width: 768px)` block that set `display: flex`.
+
+### Theme: Responsive additions must not introduce visible artifacts on the unmodified viewport
+When adding mobile/responsive support to an existing desktop-only UI, every new HTML element (nav bars, menus, overlays) must have an explicit hidden state on desktop. Relying on the media query alone to control visibility means the element is visible by default on desktop. Audit every new element added for mobile: if it has no desktop purpose, it needs `display: none` outside the media query.
+**Origin**: A mobile header menu (`<nav id="header-menu">`) with 5 buttons was added to the HTML but had no `display: none` default outside the media query, causing duplicate white buttons to appear in the desktop header.

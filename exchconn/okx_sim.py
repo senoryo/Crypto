@@ -1,8 +1,10 @@
 """
-Simulated Coinbase Exchange Adapter.
+Simulated OKX Exchange Adapter.
 
 Accepts orders, generates execution reports with realistic delays and partial fills.
-Order IDs are prefixed with "CB-".
+Order IDs are prefixed with "OKX-".
+OKX characteristics: medium spreads (0.09% jitter), medium fills (0.5-2.0s delay),
+moderate price variation (+-0.02%).
 """
 
 import asyncio
@@ -29,8 +31,8 @@ BASE_PRICES = {
     "DOGE/USD": 0.165,
 }
 
-# Coinbase has slightly wider spreads
-PRICE_JITTER_PCT = 0.0012  # 0.12%
+# OKX has medium spreads
+PRICE_JITTER_PCT = 0.0009  # 0.09%
 
 
 class SimulatedOrder:
@@ -53,15 +55,15 @@ class SimulatedOrder:
         self.fills_done = 0
 
 
-class CoinbaseSimulator:
-    """Simulated Coinbase exchange that processes orders with realistic behavior."""
+class OKXSimulator:
+    """Simulated OKX exchange that processes orders with realistic behavior."""
 
     def __init__(self):
-        self.name = "COINBASE"
-        self.prefix = "CB"
+        self.name = "OKX"
+        self.prefix = "OKX"
         self._order_counter = itertools.count(1)
-        self._orders: Dict[str, SimulatedOrder] = {}  # order_id -> SimulatedOrder
-        self._cl_to_order: Dict[str, str] = {}  # cl_ord_id -> order_id
+        self._orders: Dict[str, SimulatedOrder] = {}
+        self._cl_to_order: Dict[str, str] = {}
         self._report_callback: Optional[Callable] = None
         self._current_prices: Dict[str, float] = dict(BASE_PRICES)
         self._price_task: Optional[asyncio.Task] = None
@@ -112,12 +114,10 @@ class CoinbaseSimulator:
                     base = BASE_PRICES[symbol]
                     jitter = base * PRICE_JITTER_PCT
                     self._current_prices[symbol] += random.uniform(-jitter, jitter)
-                    # Keep price within reasonable bounds
                     self._current_prices[symbol] = max(
                         base * 0.5,
                         min(base * 1.5, self._current_prices[symbol])
                     )
-                # Check limit orders for fills
                 await self._check_limit_fills()
             except asyncio.CancelledError:
                 break
@@ -193,7 +193,6 @@ class CoinbaseSimulator:
             f"{'MKT' if ord_type == OrdType.Market else f'LMT@{price}'}"
         )
 
-        # Send immediate New acknowledgment
         ack = execution_report(
             cl_ord_id=cl_ord_id,
             order_id=order_id,
@@ -207,7 +206,6 @@ class CoinbaseSimulator:
         )
         await self._send_report(ack)
 
-        # For market orders, schedule fills with a slightly longer delay than Binance
         if ord_type == OrdType.Market:
             fill_price = self._get_current_price(symbol)
             task = asyncio.create_task(self._execute_fill(order, fill_price))
@@ -224,8 +222,8 @@ class CoinbaseSimulator:
                 if not order.is_active:
                     break
 
-                # Coinbase tends to be slightly slower
-                delay = random.uniform(0.7, 2.5)
+                # OKX: medium fills (0.5-2.0s)
+                delay = random.uniform(0.5, 2.0)
                 await asyncio.sleep(delay)
 
                 if not order.is_active:
@@ -240,8 +238,8 @@ class CoinbaseSimulator:
                 if fill_qty <= 0:
                     break
 
-                # Coinbase has slightly wider price variation
-                chunk_price = fill_price * (1 + random.uniform(-0.0003, 0.0003))
+                # OKX: moderate price variation (+-0.02%)
+                chunk_price = fill_price * (1 + random.uniform(-0.0002, 0.0002))
                 chunk_price = round(chunk_price, 8)
 
                 old_cum = order.cum_qty
@@ -442,7 +440,6 @@ class CoinbaseSimulator:
         report.set(Tag.Price, round(order.price, 8))
         await self._send_report(report)
 
-        # Restart fill sequence for amended order
         if order.is_active and order.leaves_qty > 0:
             if order.ord_type == OrdType.Market:
                 fill_price = self._get_current_price(order.symbol)
