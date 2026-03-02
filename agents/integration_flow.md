@@ -45,3 +45,7 @@ When a modify/replace flow updates values at the exchange, verify that every int
 ### Theme: Connection identity references stored in long-lived state become stale after reconnection
 When a component stores a reference to a specific connection (websocket, socket, session) inside a per-entity record (e.g., order -> source_ws), that reference becomes invalid after the connection drops and reconnects. Verify that reconnection handlers update or invalidate all stale connection references in long-lived state.
 **Origin**: OM stored `source_ws` per order; after GUIBROKER reconnect, all open orders still pointed to the old closed websocket, causing exec reports to be silently lost.
+
+### Theme: New inter-component connections require end-to-end verification through the full startup chain
+When a new component or a new WebSocket path is added to the system, verify the entire lifecycle: (1) the component is registered in shared config, (2) the launcher starts it in the correct dependency order, (3) the restart script kills it, and (4) the client (GUI or other) can actually connect and exchange messages. A message flow that looks correct in a single component's code is untested until the full startup, connection, and round-trip message path is confirmed working across the running system.
+**Origin**: GUI added a direct WS connection to the algo engine (port 8086) but the algo engine was never registered in shared/config.py PORTS, never started by run_all.py, and never killed by restart.py — so the GUI always showed "not connected to algo engine."

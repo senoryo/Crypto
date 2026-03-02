@@ -471,3 +471,40 @@ No feature_builder dispatch was needed — fixes were trivial and confined to a 
 
 ### Systemic Observation
 This incident reveals a **gap in frontend review**: the agent team had no acceptance criteria for visual verification on multiple viewports. Backend tests (pytest) passed because they don't exercise CSS rendering. Future responsive work should include explicit viewport verification steps in task descriptions, and the ux_reviewer agent should flag any `@media` blocks where cascade ordering of defaults vs overrides is incorrect.
+
+---
+
+## Incident Report: "Not Connected to Algo Engine" (2026-03-01)
+
+### Issue Triaged
+
+**Symptom**: User toggles to ALGO execution mode in the GUI, submits an order, and receives toast: "Not connected to algo engine". The algo engine was fully implemented (708-line engine, 4 strategies, control WS API) but never actually ran.
+
+### Root Cause Analysis
+
+The algo engine (port 8086) was built as a complete component with full functionality but was **invisible to the system lifecycle** because it was missing from critical manifests:
+
+1. **`shared/config.py` PORTS dict** — Missing `"ALGO": 8086`. Every other component uses `PORTS[name]` for port discovery, but the algo engine used a hardcoded `DEFAULT_ALGO_PORT = 8086` instead.
+2. **`run_all.py`** — Initially missing (fixed earlier in session). The algo engine was never started as part of the system.
+3. **`restart.py`** — Initially missing port 8086 (fixed earlier in session). The algo engine was never killed during restart.
+4. **`algo/engine.py`** — Used `DEFAULT_ALGO_PORT = 8086` hardcoded constant instead of `PORTS["ALGO"]` from shared config.
+
+### Fixes Applied
+
+| File | Fix |
+|------|-----|
+| `shared/config.py` | Added `"ALGO": 8086` to `PORTS` dict |
+| `algo/engine.py` | Changed `DEFAULT_ALGO_PORT = 8086` to `DEFAULT_ALGO_PORT = PORTS["ALGO"]` |
+| `run_all.py` | Added ALGO component to startup order (fixed earlier) |
+| `restart.py` | Added port 8086 and "ALGO" name (fixed earlier) |
+
+### Analysis Agent Updates
+
+| Agent | Themes Added | Theme Titles |
+|-------|-------------|-------------|
+| integration_flow | 1 | New inter-component connections require end-to-end verification through the full startup chain |
+| feature_builder | 1 | Adding a new component requires registration in ALL system-level manifests |
+
+### Systemic Observation
+
+This is a **component registration completeness** failure. A new component that exists in code but is absent from the shared config, launcher, and restart manifests is effectively dead code — it will never run in production. The integration_flow agent should have caught this by tracing the full lifecycle: config registration → launcher startup → restart kill → client connection → round-trip message exchange. The feature_builder agent should have ensured registration in all manifests when the component was first built. Both agents now have Learned Themes encoding this lesson.

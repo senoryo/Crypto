@@ -42,4 +42,7 @@ Read the task description carefully. Understand:
 - Prefer editing existing files over creating new ones
 
 ## Learned Themes
-*(Empty — the Supervisor will append generalized lessons here)*
+
+### Theme: Adding a new component requires registration in ALL system-level manifests
+When a new component (server, engine, service) is added to the system, it must be registered in every manifest that governs the system lifecycle: shared config (ports dict), launcher script (startup order), restart script (kill list), and any status/health-check systems (architecture diagram, header status). A component that exists in code but is missing from any of these manifests is effectively invisible to the system and will never run in production.
+**Origin**: Algo engine (port 8086) was built with full functionality but never added to shared/config.py PORTS, run_all.py, or restart.py — so it was never started and the GUI could never connect to it.

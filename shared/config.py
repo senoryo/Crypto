@@ -73,6 +73,7 @@ PORTS = {
     "OM": 8083,
     "EXCHCONN": 8084,
     "POSMANAGER": 8085,
+    "ALGO": 8086,
 }
 
 HOST = "localhost"

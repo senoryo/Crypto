@@ -34,7 +34,7 @@ from shared.ws_transport import WSServer, WSClient
 logger = logging.getLogger("ALGO")
 
 # --- Constants ---
-DEFAULT_ALGO_PORT = 8086
+DEFAULT_ALGO_PORT = PORTS["ALGO"]
 DEFAULT_MAX_ORDERS_PER_SECOND = 50
 DEFAULT_MAX_CONCURRENT_ALGOS = 10
 DEFAULT_MAX_AGGREGATE_NOTIONAL = 10_000_000
