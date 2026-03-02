@@ -1331,6 +1331,7 @@
         OM:         { port: 8083, role: "Order manager" },
         EXCHCONN:   { port: 8084, role: "Exchange connector" },
         POSMANAGER: { port: 8085, role: "Position tracker" },
+        ALGO:       { port: 8086, role: "Algo engine" },
     };
 
     window.openStatusModal = function () {
@@ -1346,7 +1347,7 @@
                 var exchanges = resp.exchanges || {};
                 var fixSessions = resp.fix_sessions || null;
                 // Merge: for WS-connected components, use client-side state
-                var WS_COMPONENTS = { MKTDATA: true, GUIBROKER: true, POSMANAGER: true };
+                var WS_COMPONENTS = { MKTDATA: true, GUIBROKER: true, POSMANAGER: true, ALGO: true };
                 var merged = {};
                 for (var name in COMPONENT_INFO) {
                     if (name === "GUI") {
@@ -1466,6 +1467,11 @@
         h += '<div class="arch-exchange-group">';
         h += exchangeBox("BINANCE", exchanges.BINANCE);
         h += exchangeBox("COINBASE", exchanges.COINBASE);
+        h += exchangeBox("KRAKEN", exchanges.KRAKEN);
+        h += exchangeBox("BYBIT", exchanges.BYBIT);
+        h += exchangeBox("OKX", exchanges.OKX);
+        h += exchangeBox("BITFINEX", exchanges.BITFINEX);
+        h += exchangeBox("HTX", exchanges.HTX);
         h += '</div>';
         h += '</div>';
 
@@ -1478,7 +1484,27 @@
         h += '</div>';
         h += '</div>';
 
-        // Row 2: POSMANAGER ← MKTDATA ← feeds
+        // Row 2: ALGO ← GUI (direct WS) + ALGO → OM (child orders)
+        h += '<div class="arch-row">';
+        h += componentBox("ALGO", status.ALGO);
+        h += arrow("JSON", "left");
+        h += '<div class="arch-external">GUI (algo orders)</div>';
+        h += '<span style="width:40px"></span>';
+        h += componentBox("ALGO", status.ALGO);
+        h += arrow("FIX", "right");
+        h += '<div class="arch-external">OM (child orders)</div>';
+        h += '</div>';
+
+        // Vertical connectors
+        h += '<div class="arch-vertical-section">';
+        h += '<div class="arch-vconn">';
+        h += '<div class="arch-vconn-line">│</div>';
+        h += '<div class="arch-vconn-label">market data</div>';
+        h += '<div class="arch-vconn-line">▼</div>';
+        h += '</div>';
+        h += '</div>';
+
+        // Row 3: POSMANAGER ← MKTDATA ← feeds
         h += '<div class="arch-row">';
         h += componentBox("POSMANAGER", status.POSMANAGER);
         h += arrow("market data", "left");
@@ -1487,6 +1513,11 @@
         h += '<div class="arch-exchange-group">';
         h += exchangeBox("BINANCE", exchanges.BINANCE);
         h += exchangeBox("COINBASE", exchanges.COINBASE);
+        h += exchangeBox("KRAKEN", exchanges.KRAKEN);
+        h += exchangeBox("BYBIT", exchanges.BYBIT);
+        h += exchangeBox("OKX", exchanges.OKX);
+        h += exchangeBox("BITFINEX", exchanges.BITFINEX);
+        h += exchangeBox("HTX", exchanges.HTX);
         h += '</div>';
         h += '</div>';
 
@@ -1509,7 +1540,7 @@
 
     function updateHeaderStatus() {
         var btn = document.getElementById("status-btn");
-        var WS_NAMES = ["MKTDATA", "GUIBROKER", "POSMANAGER"];
+        var WS_NAMES = ["MKTDATA", "GUIBROKER", "POSMANAGER", "ALGO"];
         var upCount = 0;
         var total = WS_NAMES.length;
 
@@ -1537,8 +1568,8 @@
                 var exchanges = resp.exchanges || {};
 
                 // Update button: merge WS state + server probes
-                var WS_COMPONENTS = { MKTDATA: true, GUIBROKER: true, POSMANAGER: true };
-                var allNames = ["MKTDATA", "GUIBROKER", "POSMANAGER", "OM", "EXCHCONN"];
+                var WS_COMPONENTS = { MKTDATA: true, GUIBROKER: true, POSMANAGER: true, ALGO: true };
+                var allNames = ["MKTDATA", "GUIBROKER", "POSMANAGER", "ALGO", "OM", "EXCHCONN"];
                 var upCount = 0;
 
                 allNames.forEach(function (name) {
