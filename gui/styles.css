@@ -1577,6 +1577,19 @@ html, body {
     line-height: 1.5;
 }
 
+/* ===== Mobile: desktop defaults (hidden on desktop, shown in media query) ===== */
+#header-menu-btn {
+    display: none;
+}
+
+#header-menu {
+    display: none;
+}
+
+#mobile-tabs {
+    display: none;
+}
+
 /* ===== Mobile Responsive (max-width: 768px) ===== */
 @media (max-width: 768px) {
     /* --- Layout overrides --- */
@@ -1882,11 +1895,3 @@ html, body {
     }
 }
 
-/* Hide hamburger + menu on desktop */
-#header-menu-btn {
-    display: none;
-}
-
-#mobile-tabs {
-    display: none;
-}
