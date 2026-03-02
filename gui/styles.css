@@ -462,6 +462,167 @@ html, body {
     transform: scale(0.98);
 }
 
+/* ===== Execution Mode Toggle ===== */
+.exec-toggle {
+    display: flex;
+    gap: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.exec-btn {
+    flex: 1;
+    padding: 5px 0;
+    border: none;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+}
+
+.exec-btn.active {
+    background: var(--blue);
+    color: #fff;
+}
+
+/* ===== Algo Params Section ===== */
+.algo-params {
+    overflow: hidden;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease-out;
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+    margin-top: 2px;
+}
+
+.algo-param-group {
+    margin-bottom: 4px;
+}
+
+.algo-params .form-row {
+    gap: 8px;
+}
+
+.algo-params input[type="range"] {
+    width: 100%;
+    accent-color: var(--blue);
+    background: transparent;
+    height: 4px;
+    margin-top: 6px;
+}
+
+.algo-params input[type="checkbox"] {
+    accent-color: var(--blue);
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+/* ===== Algo Blotter ===== */
+.algo-progress-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.algo-progress-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 50px;
+}
+
+.algo-progress-fill {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.algo-progress-pct {
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
+}
+
+.algo-status-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.algo-status-badge.active {
+    background: var(--green-bg);
+    color: var(--green);
+}
+
+.algo-status-badge.paused {
+    background: var(--yellow-bg);
+    color: var(--yellow);
+}
+
+.algo-status-badge.done {
+    background: var(--blue-bg);
+    color: var(--blue);
+}
+
+.algo-status-badge.cancelled {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+}
+
+.algo-status-badge.pending,
+.algo-status-badge.completing {
+    background: var(--yellow-bg);
+    color: var(--orange);
+}
+
+.algo-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.btn-algo-action {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-algo-action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-bright);
+}
+
+.btn-algo-action.pause:hover {
+    border-color: var(--yellow);
+    color: var(--yellow);
+}
+
+.btn-algo-action.resume:hover {
+    border-color: var(--green);
+    color: var(--green);
+}
+
+.btn-algo-action.cancel:hover {
+    border-color: var(--red);
+    color: var(--red);
+}
+
 /* ===== Order Blotter Table ===== */
 .blotter-table {
     width: 100%;
@@ -1892,6 +2053,20 @@ html, body {
     /* --- Side toggle full-width --- */
     .side-toggle {
         width: 100%;
+    }
+
+    /* --- Algo params mobile --- */
+    .exec-toggle {
+        width: 100%;
+    }
+
+    .exec-btn {
+        min-height: 44px;
+        font-size: 13px;
+    }
+
+    .algo-params .form-group {
+        min-width: 45%;
     }
 }
 

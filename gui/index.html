@@ -88,6 +88,29 @@
                                     <option value="AUTO">AUTO</option>
                                     <option value="BINANCE">BINANCE</option>
                                     <option value="COINBASE">COINBASE</option>
+                                    <option value="KRAKEN">KRAKEN</option>
+                                    <option value="BYBIT">BYBIT</option>
+                                    <option value="OKX">OKX</option>
+                                    <option value="BITFINEX">BITFINEX</option>
+                                    <option value="HTX">HTX</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Execution</label>
+                                <div class="exec-toggle">
+                                    <button type="button" class="exec-btn active" id="oe-direct" onclick="setExecMode('DIRECT')">DIRECT</button>
+                                    <button type="button" class="exec-btn" id="oe-algo" onclick="setExecMode('ALGO')">ALGO</button>
+                                </div>
+                            </div>
+                            <div class="form-group algo-only" id="algo-strategy-group" style="display:none">
+                                <label>Strategy</label>
+                                <select id="oe-algo-type" onchange="onAlgoTypeChange()">
+                                    <option value="SOR">SOR</option>
+                                    <option value="VWAP">VWAP</option>
+                                    <option value="TWAP">TWAP</option>
+                                    <option value="IS">IS</option>
                                 </select>
                             </div>
                         </div>
@@ -110,6 +133,68 @@
                                 <input type="number" id="oe-price" step="any" min="0" placeholder="0.00">
                             </div>
                         </div>
+                        <!-- Algo Parameters (hidden when DIRECT) -->
+                        <div class="algo-params" id="algo-params" style="display:none">
+                            <div class="algo-param-group" id="algo-params-duration">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Duration (min)</label>
+                                        <input type="number" id="oe-algo-duration" step="1" min="1" value="60" placeholder="60">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="algo-param-group" id="algo-params-vwap" style="display:none">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Buckets</label>
+                                        <input type="number" id="oe-algo-buckets" step="1" min="1" value="10" placeholder="10">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Participation %</label>
+                                        <input type="number" id="oe-algo-participation" step="1" min="1" max="100" value="20" placeholder="20">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="algo-param-group" id="algo-params-twap" style="display:none">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Slices</label>
+                                        <input type="number" id="oe-algo-slices" step="1" min="1" value="10" placeholder="10">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Jitter %</label>
+                                        <input type="number" id="oe-algo-jitter" step="1" min="0" max="100" value="15" placeholder="15">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="algo-param-group" id="algo-params-is" style="display:none">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Urgency <span id="oe-algo-urgency-val" style="color:var(--blue)">0.5</span></label>
+                                        <input type="range" id="oe-algo-urgency" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('oe-algo-urgency-val').textContent=this.value">
+                                    </div>
+                                    <div class="form-group" style="flex:0 0 auto; align-self:flex-end">
+                                        <label><input type="checkbox" id="oe-algo-adaptive" checked> Adaptive</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="algo-param-group" id="algo-params-sor" style="display:none">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Routing Mode</label>
+                                        <select id="oe-algo-routing">
+                                            <option value="best">Best</option>
+                                            <option value="split">Split</option>
+                                            <option value="spray">Spray</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Max Venues</label>
+                                        <input type="number" id="oe-algo-maxvenues" step="1" min="1" max="7" value="3" placeholder="3">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="form-row oe-info-row">
                             <span class="oe-notional" id="oe-notional"></span>
                         </div>
@@ -125,6 +210,7 @@
                 <div class="blotter-tabs">
                     <button class="blotter-tab active" id="tab-orders" onclick="switchBlotterTab('orders')">Orders</button>
                     <button class="blotter-tab" id="tab-trades" onclick="switchBlotterTab('trades')">Trades</button>
+                    <button class="blotter-tab" id="tab-algos" onclick="switchBlotterTab('algos')">Algos</button>
                 </div>
                 <div class="blotter-header-right">
                     <span class="blotter-count" id="blotter-count">0 orders</span>
@@ -164,6 +250,23 @@
                         </tr>
                     </thead>
                     <tbody id="trades-tbody"></tbody>
+                </table>
+            </div>
+            <div class="panel-body" id="algos-body" style="display:none">
+                <table class="blotter-table algo-blotter">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Algo</th>
+                            <th>Progress</th>
+                            <th>Status</th>
+                            <th>Slippage</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="algos-tbody"></tbody>
                 </table>
             </div>
         </div>

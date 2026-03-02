@@ -1,6 +1,6 @@
 """
 Clean restart of the Crypto Trading System.
-Kills all component processes on ports 8080-8085, then starts everything fresh.
+Kills all component processes on ports 8080-8086, then starts everything fresh.
 
 Usage:
     python restart.py          # Full restart with browser
@@ -15,7 +15,7 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PORTS = [8080, 8081, 8082, 8083, 8084, 8085]
+PORTS = [8080, 8081, 8082, 8083, 8084, 8085, 8086]
 PORT_NAMES = {
     8080: "GUI",
     8081: "MKTDATA",
@@ -23,6 +23,7 @@ PORT_NAMES = {
     8083: "OM",
     8084: "EXCHCONN",
     8085: "POSMANAGER",
+    8086: "ALGO",
 }
 
 

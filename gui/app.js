@@ -13,6 +13,7 @@
                 MKTDATA: "ws://localhost:8081",
                 GUIBROKER: "ws://localhost:8082",
                 POSMANAGER: "ws://localhost:8085",
+                ALGO: "ws://localhost:8086",
             };
         }
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -20,6 +21,7 @@
             MKTDATA: proto + "//" + location.host + "/ws/mktdata",
             GUIBROKER: proto + "//" + location.host + "/ws/guibroker",
             POSMANAGER: proto + "//" + location.host + "/ws/posmanager",
+            ALGO: proto + "//" + location.host + "/ws/algo",
         };
     })();
 
@@ -37,9 +39,12 @@
         pnlHistory: [],      // array of { time, pnl } for equity curve
         sockets: {},         // name -> WebSocket
         selectedSymbol: null,
-        blotterTab: "orders", // "orders" or "trades"
+        blotterTab: "orders", // "orders", "trades", or "algos"
         mobilePanel: "market",
         headerMenuOpen: false,
+        execMode: "DIRECT",  // "DIRECT" or "ALGO"
+        algos: new Map(),    // parent_order_id -> algo status object
+        algoPollingInterval: null,
     };
 
     // --- DOM References ---
@@ -73,6 +78,14 @@
         toastContainer: document.getElementById("toast-container"),
         headerClock: document.getElementById("header-clock"),
         pnlChart: document.getElementById("pnl-chart"),
+        // Algo elements
+        oeDirectBtn: document.getElementById("oe-direct"),
+        oeAlgoBtn: document.getElementById("oe-algo"),
+        algoStrategyGroup: document.getElementById("algo-strategy-group"),
+        oeAlgoType: document.getElementById("oe-algo-type"),
+        algoParams: document.getElementById("algo-params"),
+        algosBody: document.getElementById("algos-body"),
+        algosTbody: document.getElementById("algos-tbody"),
     };
 
     // ============================================================
@@ -308,15 +321,16 @@
 
     window.setSide = function (side) {
         state.side = side;
+        var suffix = state.execMode === "ALGO" ? " (ALGO)" : "";
         if (side === "BUY") {
             dom.oeBuy.classList.add("active");
             dom.oeSell.classList.remove("active");
-            dom.oeSubmit.textContent = "BUY";
+            dom.oeSubmit.textContent = "BUY" + suffix;
             dom.oeSubmit.className = "submit-btn buy";
         } else {
             dom.oeSell.classList.add("active");
             dom.oeBuy.classList.remove("active");
-            dom.oeSubmit.textContent = "SELL";
+            dom.oeSubmit.textContent = "SELL" + suffix;
             dom.oeSubmit.className = "submit-btn sell";
         }
     };
@@ -328,8 +342,257 @@
         updateNotionalDisplay();
     };
 
+    // ============================================================
+    // Execution Mode (DIRECT / ALGO)
+    // ============================================================
+
+    window.setExecMode = function (mode) {
+        state.execMode = mode;
+        if (mode === "DIRECT") {
+            dom.oeDirectBtn.classList.add("active");
+            dom.oeAlgoBtn.classList.remove("active");
+            dom.algoStrategyGroup.style.display = "none";
+            dom.algoParams.style.display = "none";
+            // Restore submit button text to side
+            dom.oeSubmit.textContent = state.side;
+            dom.oeSubmit.className = "submit-btn " + (state.side === "BUY" ? "buy" : "sell");
+        } else {
+            dom.oeAlgoBtn.classList.add("active");
+            dom.oeDirectBtn.classList.remove("active");
+            dom.algoStrategyGroup.style.display = "";
+            dom.algoParams.style.display = "";
+            dom.oeSubmit.textContent = state.side + " (ALGO)";
+            dom.oeSubmit.className = "submit-btn " + (state.side === "BUY" ? "buy" : "sell");
+            onAlgoTypeChange();
+        }
+    };
+
+    window.onAlgoTypeChange = function () {
+        var type = dom.oeAlgoType.value;
+        // Hide all strategy-specific param groups
+        var groups = ["vwap", "twap", "is", "sor", "duration"];
+        groups.forEach(function (g) {
+            var el = document.getElementById("algo-params-" + g);
+            if (el) el.style.display = "none";
+        });
+        // Show relevant groups
+        if (type === "VWAP") {
+            document.getElementById("algo-params-duration").style.display = "";
+            document.getElementById("algo-params-vwap").style.display = "";
+        } else if (type === "TWAP") {
+            document.getElementById("algo-params-duration").style.display = "";
+            document.getElementById("algo-params-twap").style.display = "";
+        } else if (type === "IS") {
+            document.getElementById("algo-params-duration").style.display = "";
+            document.getElementById("algo-params-is").style.display = "";
+        } else if (type === "SOR") {
+            document.getElementById("algo-params-sor").style.display = "";
+        }
+    };
+
+    // ============================================================
+    // Algo Order Submission
+    // ============================================================
+
+    function submitAlgoOrder() {
+        var ws = state.sockets.ALGO;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            showToast("Not connected to algo engine", "error");
+            return;
+        }
+
+        var symbol = dom.oeSymbol.value;
+        var qty = parseFloat(dom.oeQty.value);
+        var algoType = dom.oeAlgoType.value;
+        var side = state.side === "BUY" ? "1" : "2";
+
+        if (!qty || qty <= 0) {
+            showToast("Enter a valid quantity", "error");
+            return;
+        }
+
+        // Build strategy-specific params
+        var params = {};
+        if (algoType === "VWAP") {
+            var durationMin = parseFloat(document.getElementById("oe-algo-duration").value) || 60;
+            params.duration_seconds = durationMin * 60;
+            params.num_buckets = parseInt(document.getElementById("oe-algo-buckets").value, 10) || 10;
+            var participation = parseFloat(document.getElementById("oe-algo-participation").value);
+            if (participation > 0) params.participation_cap = participation / 100;
+        } else if (algoType === "TWAP") {
+            var durationMin = parseFloat(document.getElementById("oe-algo-duration").value) || 60;
+            params.duration_seconds = durationMin * 60;
+            params.num_slices = parseInt(document.getElementById("oe-algo-slices").value, 10) || 10;
+            var jitter = parseFloat(document.getElementById("oe-algo-jitter").value);
+            if (jitter > 0) params.jitter_pct = jitter / 100;
+        } else if (algoType === "IS") {
+            var durationMin = parseFloat(document.getElementById("oe-algo-duration").value) || 60;
+            params.duration_seconds = durationMin * 60;
+            params.urgency = parseFloat(document.getElementById("oe-algo-urgency").value) || 0.5;
+            params.adaptive = document.getElementById("oe-algo-adaptive").checked;
+        } else if (algoType === "SOR") {
+            params.routing_mode = document.getElementById("oe-algo-routing").value;
+            params.max_venues = parseInt(document.getElementById("oe-algo-maxvenues").value, 10) || 3;
+        }
+
+        var msg = {
+            action: "submit",
+            algo_type: algoType,
+            symbol: symbol,
+            side: side,
+            qty: qty,
+            params: params,
+        };
+
+        ws.send(JSON.stringify(msg));
+        showToast(state.side + " " + qty + " " + symbol + " via " + algoType, "info");
+
+        // Reset qty
+        dom.oeQty.value = "";
+        updateNotionalDisplay();
+
+        // Switch to algos tab to show the new order
+        switchBlotterTab("algos");
+    }
+
+    // ============================================================
+    // Algo WebSocket Connection
+    // ============================================================
+
+    function connectAlgoWs() {
+        connectWS("ALGO", WS_URLS.ALGO, onAlgoMessage);
+
+        // Start polling for algo status every 2 seconds
+        if (state.algoPollingInterval) clearInterval(state.algoPollingInterval);
+        state.algoPollingInterval = setInterval(pollAlgoStatus, 2000);
+    }
+
+    function onAlgoMessage(data) {
+        // Handle responses from algo engine
+        if (data.status === "ok" && data.parent_order_id) {
+            // Submit acknowledgment
+            showToast("Algo started: " + data.parent_order_id, "success");
+        } else if (data.status === "error") {
+            showToast("Algo error: " + (data.reason || "unknown"), "error");
+        } else if (data.status === "ok" && Array.isArray(data.data)) {
+            // Status response with array of algos
+            updateAlgoState(data.data);
+        } else if (data.status === "ok" && data.data && data.data.parent_id) {
+            // Single algo status
+            updateSingleAlgo(data.data);
+        }
+    }
+
+    function pollAlgoStatus() {
+        var ws = state.sockets.ALGO;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ action: "status" }));
+    }
+
+    function updateAlgoState(algos) {
+        // Mark existing algos that are no longer in the active list as potentially done
+        algos.forEach(function (a) {
+            state.algos.set(a.parent_id, a);
+        });
+        if (state.blotterTab === "algos") {
+            renderAlgos();
+        }
+    }
+
+    function updateSingleAlgo(a) {
+        state.algos.set(a.parent_id, a);
+        if (state.blotterTab === "algos") {
+            renderAlgos();
+        }
+    }
+
+    function renderAlgos() {
+        var rows = [];
+        state.algos.forEach(function (algo) {
+            rows.push(algo);
+        });
+
+        // Sort: active first, then by creation time desc
+        rows.sort(function (a, b) {
+            var activeStates = { ACTIVE: 0, PAUSED: 1, PENDING: 2, COMPLETING: 3, DONE: 4, CANCELLED: 5 };
+            var sa = activeStates[a.state] != null ? activeStates[a.state] : 9;
+            var sb = activeStates[b.state] != null ? activeStates[b.state] : 9;
+            if (sa !== sb) return sa - sb;
+            return (b.created_at || 0) - (a.created_at || 0);
+        });
+
+        dom.algosTbody.innerHTML = rows.map(function (a) {
+            var sideLabel = a.side === "1" ? "BUY" : "SELL";
+            var sideClass = a.side === "1" ? "side-buy" : "side-sell";
+            var fillPct = Math.round((a.fill_pct || 0) * 100);
+            var statusLower = (a.state || "").toLowerCase();
+            var slippage = a.slippage != null ? (a.slippage >= 0 ? "+" : "") + a.slippage.toFixed(2) : "--";
+            var slippageClass = a.slippage > 0 ? "pnl-negative" : (a.slippage < 0 ? "pnl-positive" : "pnl-zero");
+
+            var isActive = a.state === "ACTIVE" || a.state === "PAUSED" || a.state === "PENDING" || a.state === "COMPLETING";
+            var actions = "";
+            if (isActive) {
+                if (a.state === "PAUSED") {
+                    actions += '<button class="btn-algo-action resume" onclick="resumeAlgo(\'' + escapeHtml(a.parent_id) + '\')">Resume</button>';
+                } else if (a.state === "ACTIVE") {
+                    actions += '<button class="btn-algo-action pause" onclick="pauseAlgo(\'' + escapeHtml(a.parent_id) + '\')">Pause</button>';
+                }
+                actions += '<button class="btn-algo-action cancel" onclick="cancelAlgo(\'' + escapeHtml(a.parent_id) + '\')">Cancel</button>';
+            }
+
+            return (
+                "<tr>" +
+                "<td>" + escapeHtml(shortId(a.parent_id)) + "</td>" +
+                "<td>" + escapeHtml(a.symbol) + "</td>" +
+                '<td class="' + sideClass + '">' + sideLabel + "</td>" +
+                "<td>" + escapeHtml(a.algo_type) + "</td>" +
+                '<td><div class="algo-progress-bar"><div class="algo-progress-track"><div class="algo-progress-fill" style="width:' + fillPct + '%"></div></div><span class="algo-progress-pct">' + fillPct + '%</span></div></td>' +
+                '<td><span class="algo-status-badge ' + statusLower + '">' + escapeHtml(a.state) + '</span></td>' +
+                '<td class="' + slippageClass + '">' + slippage + "</td>" +
+                '<td><div class="algo-actions">' + actions + '</div></td>' +
+                "</tr>"
+            );
+        }).join("");
+    }
+
+    window.pauseAlgo = function (parentId) {
+        var ws = state.sockets.ALGO;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            showToast("Not connected to algo engine", "error");
+            return;
+        }
+        ws.send(JSON.stringify({ action: "pause", parent_order_id: parentId }));
+        showToast("Pause requested: " + shortId(parentId), "info");
+    };
+
+    window.resumeAlgo = function (parentId) {
+        var ws = state.sockets.ALGO;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            showToast("Not connected to algo engine", "error");
+            return;
+        }
+        ws.send(JSON.stringify({ action: "resume", parent_order_id: parentId }));
+        showToast("Resume requested: " + shortId(parentId), "info");
+    };
+
+    window.cancelAlgo = function (parentId) {
+        var ws = state.sockets.ALGO;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            showToast("Not connected to algo engine", "error");
+            return;
+        }
+        ws.send(JSON.stringify({ action: "cancel", parent_order_id: parentId }));
+        showToast("Cancel requested: " + shortId(parentId), "info");
+    };
+
     function submitOrder(e) {
         if (e && e.preventDefault) e.preventDefault();
+
+        // Route to algo engine if in ALGO mode
+        if (state.execMode === "ALGO") {
+            submitAlgoOrder();
+            return;
+        }
 
         var ws = state.sockets.GUIBROKER;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -505,17 +768,25 @@
         state.blotterTab = tab;
         var tabOrders = document.getElementById("tab-orders");
         var tabTrades = document.getElementById("tab-trades");
+        var tabAlgos = document.getElementById("tab-algos");
+
+        tabOrders.classList.remove("active");
+        tabTrades.classList.remove("active");
+        tabAlgos.classList.remove("active");
+        dom.ordersBody.style.display = "none";
+        dom.tradesBody.style.display = "none";
+        dom.algosBody.style.display = "none";
 
         if (tab === "orders") {
             tabOrders.classList.add("active");
-            tabTrades.classList.remove("active");
             dom.ordersBody.style.display = "";
-            dom.tradesBody.style.display = "none";
-        } else {
+        } else if (tab === "trades") {
             tabTrades.classList.add("active");
-            tabOrders.classList.remove("active");
-            dom.ordersBody.style.display = "none";
             dom.tradesBody.style.display = "";
+        } else if (tab === "algos") {
+            tabAlgos.classList.add("active");
+            dom.algosBody.style.display = "";
+            renderAlgos();
         }
     };
 
@@ -1854,6 +2125,7 @@
         connectWS("MKTDATA", WS_URLS.MKTDATA, onMarketData);
         connectWS("GUIBROKER", WS_URLS.GUIBROKER, onBrokerMessage);
         connectWS("POSMANAGER", WS_URLS.POSMANAGER, onPositionUpdate);
+        connectAlgoWs();
 
         // Mobile initialization
         if (isMobile()) {

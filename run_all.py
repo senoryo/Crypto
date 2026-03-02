@@ -12,8 +12,9 @@ Component startup order (respects dependencies):
     3. POSMANAGER(port 8085) - needs MKTDATA
     4. OM        (port 8083) - needs EXCHCONN, POSMANAGER
     5. GUIBROKER (port 8082) - needs OM
-    6. GUI       (port 8080) - needs GUIBROKER, MKTDATA, POSMANAGER
-    7. PROXY     (PORT env)  - only on Render / when PORT is set
+    6. ALGO      (port 8086) - needs MKTDATA, OM
+    7. GUI       (port 8080) - needs GUIBROKER, MKTDATA, POSMANAGER
+    8. PROXY     (PORT env)  - only on Render / when PORT is set
 """
 
 import subprocess
@@ -62,6 +63,12 @@ COMPONENTS = [
         "name": "GUIBROKER",
         "module": "guibroker.guibroker",
         "port": 8082,
+        "delay_after": 1.0,
+    },
+    {
+        "name": "ALGO",
+        "module": "algo",
+        "port": 8086,
         "delay_after": 1.0,
     },
     {
@@ -138,6 +145,7 @@ def start_all(open_browser: bool = True):
     print(f"  OM:         ws://localhost:8083")
     print(f"  EXCHCONN:   ws://localhost:8084")
     print(f"  POSMANAGER: ws://localhost:8085")
+    print(f"  ALGO:       ws://localhost:8086")
     print(f"\n  Press Ctrl+C to stop all components\n")
 
     # SIGTERM handler for Render's graceful shutdown
