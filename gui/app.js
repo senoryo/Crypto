@@ -38,6 +38,8 @@
         sockets: {},         // name -> WebSocket
         selectedSymbol: null,
         blotterTab: "orders", // "orders" or "trades"
+        mobilePanel: "market",
+        headerMenuOpen: false,
     };
 
     // --- DOM References ---
@@ -195,13 +197,13 @@
         }
 
         var html =
-            '<td class="md-symbol">' + sym + "</td>" +
-            '<td class="md-bid">' + bidHtml + "</td>" +
-            '<td class="md-ask">' + askHtml + "</td>" +
-            '<td class="md-spread">' + (spread > 0 ? formatPrice(spread, sym) : "--") + "</td>" +
-            '<td class="md-last">' + formatPrice(d.last, sym) + "</td>" +
-            '<td class="md-mid">' + (mid > 0 ? formatPrice(mid, sym) : "--") + "</td>" +
-            '<td class="md-volume">' + formatQty(d.volume) + "</td>";
+            '<td class="md-symbol" data-col="symbol">' + sym + "</td>" +
+            '<td class="md-bid" data-col="bid">' + bidHtml + "</td>" +
+            '<td class="md-ask" data-col="ask">' + askHtml + "</td>" +
+            '<td class="md-spread" data-col="spread">' + (spread > 0 ? formatPrice(spread, sym) : "--") + "</td>" +
+            '<td class="md-last" data-col="last">' + formatPrice(d.last, sym) + "</td>" +
+            '<td class="md-mid" data-col="mid">' + (mid > 0 ? formatPrice(mid, sym) : "--") + "</td>" +
+            '<td class="md-volume" data-col="volume">' + formatQty(d.volume) + "</td>";
 
         if (existingRow) {
             existingRow.innerHTML = html;
@@ -327,7 +329,7 @@
     };
 
     function submitOrder(e) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
 
         var ws = state.sockets.GUIBROKER;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -459,17 +461,17 @@
 
             return (
                 "<tr" + dblClickAttr + ">" +
-                "<td>" + escapeHtml(shortId(o.cl_ord_id)) + "</td>" +
-                "<td>" + escapeHtml(o.symbol) + "</td>" +
-                '<td class="' + sideClass + '">' + escapeHtml(o.side) + "</td>" +
-                "<td>" + formatQty(o.qty) + "</td>" +
-                "<td>" + (o.price > 0 ? formatPrice(o.price, o.symbol) : "MKT") + "</td>" +
-                "<td>" + escapeHtml(o.ord_type || "") + "</td>" +
-                '<td class="' + statusClass + '">' + escapeHtml(o.status) + "</td>" +
-                '<td class="filled-cell">' + filledDisplay + "</td>" +
-                "<td>" + (o.avg_px > 0 ? formatPrice(o.avg_px, o.symbol) : "--") + "</td>" +
-                "<td>" + escapeHtml(o.exchange || "") + "</td>" +
-                "<td>" + actions + "</td>" +
+                '<td data-col="clordid">' + escapeHtml(shortId(o.cl_ord_id)) + "</td>" +
+                '<td data-col="symbol">' + escapeHtml(o.symbol) + "</td>" +
+                '<td class="' + sideClass + '" data-col="side">' + escapeHtml(o.side) + "</td>" +
+                '<td data-col="qty">' + formatQty(o.qty) + "</td>" +
+                '<td data-col="price">' + (o.price > 0 ? formatPrice(o.price, o.symbol) : "MKT") + "</td>" +
+                '<td data-col="type">' + escapeHtml(o.ord_type || "") + "</td>" +
+                '<td class="' + statusClass + '" data-col="status">' + escapeHtml(o.status) + "</td>" +
+                '<td class="filled-cell" data-col="filled">' + filledDisplay + "</td>" +
+                '<td data-col="avgpx">' + (o.avg_px > 0 ? formatPrice(o.avg_px, o.symbol) : "--") + "</td>" +
+                '<td data-col="exchange">' + escapeHtml(o.exchange || "") + "</td>" +
+                '<td data-col="actions">' + actions + "</td>" +
                 "</tr>"
             );
         }).join("");
@@ -484,12 +486,12 @@
             var sideClass = t.side === "BUY" ? "side-buy" : "side-sell";
             return (
                 "<tr>" +
-                '<td class="col-ts">' + escapeHtml(t.time) + "</td>" +
-                "<td>" + escapeHtml(t.symbol) + "</td>" +
-                '<td class="' + sideClass + '">' + escapeHtml(t.side) + "</td>" +
-                "<td>" + formatQty(t.qty) + "</td>" +
-                "<td>" + (t.price > 0 ? formatPrice(t.price, t.symbol) : "--") + "</td>" +
-                "<td>" + escapeHtml(t.exchange || "") + "</td>" +
+                '<td class="col-ts" data-col="time">' + escapeHtml(t.time) + "</td>" +
+                '<td data-col="symbol">' + escapeHtml(t.symbol) + "</td>" +
+                '<td class="' + sideClass + '" data-col="side">' + escapeHtml(t.side) + "</td>" +
+                '<td data-col="qty">' + formatQty(t.qty) + "</td>" +
+                '<td data-col="price">' + (t.price > 0 ? formatPrice(t.price, t.symbol) : "--") + "</td>" +
+                '<td data-col="exchange">' + escapeHtml(t.exchange || "") + "</td>" +
                 "</tr>"
             );
         }).join("");
@@ -688,13 +690,13 @@
 
             return (
                 "<tr>" +
-                "<td>" + escapeHtml(p.symbol || "") + "</td>" +
-                '<td class="' + dirClass + '">' + dirLabel + "</td>" +
-                "<td>" + formatQty(Math.abs(qty)) + "</td>" +
-                "<td>" + formatPrice(p.avg_cost, p.symbol) + "</td>" +
-                "<td>" + formatPrice(p.market_price, p.symbol) + "</td>" +
-                '<td class="' + pnlClass(upnl) + '">' + formatPnl(upnl) + "</td>" +
-                '<td class="' + pnlClass(rpnl) + '">' + formatPnl(rpnl) + "</td>" +
+                '<td data-col="symbol">' + escapeHtml(p.symbol || "") + "</td>" +
+                '<td class="' + dirClass + '" data-col="dir">' + dirLabel + "</td>" +
+                '<td data-col="qty">' + formatQty(Math.abs(qty)) + "</td>" +
+                '<td data-col="avgcost">' + formatPrice(p.avg_cost, p.symbol) + "</td>" +
+                '<td data-col="mktprice">' + formatPrice(p.market_price, p.symbol) + "</td>" +
+                '<td class="' + pnlClass(upnl) + '" data-col="upnl">' + formatPnl(upnl) + "</td>" +
+                '<td class="' + pnlClass(rpnl) + '" data-col="rpnl">' + formatPnl(rpnl) + "</td>" +
                 "</tr>"
             );
         }).join("");
@@ -781,8 +783,9 @@
         var canvas = dom.pnlChart;
         if (!canvas) return;
         var ctx = canvas.getContext("2d");
-        var w = canvas.width;
-        var h = canvas.height;
+        var dpr = window.devicePixelRatio || 1;
+        var w = canvas.width / dpr;
+        var h = canvas.height / dpr;
 
         ctx.clearRect(0, 0, w, h);
 
@@ -850,8 +853,8 @@
         } else if (data.type === "order_ack") {
             // Pre-populate the order in the blotter from the ack
             var id = data.cl_ord_id;
-            if (id && !orders[id]) {
-                orders[id] = {
+            if (id && !state.orders.has(id)) {
+                state.orders.set(id, {
                     cl_ord_id: id,
                     symbol: data.symbol || "",
                     side: data.side || "",
@@ -864,7 +867,7 @@
                     leaves_qty: data.qty || 0,
                     exchange: data.exchange || "",
                     text: "",
-                };
+                });
                 renderBlotter();
             }
         }
@@ -1717,6 +1720,128 @@
             });
     }
 
+    // ============================================================
+    // Mobile Responsiveness
+    // ============================================================
+
+    function isMobile() {
+        return window.innerWidth <= 768;
+    }
+
+    window.switchMobilePanel = function (panel) {
+        state.mobilePanel = panel;
+
+        // Hide all panels
+        var panels = document.querySelectorAll("[data-panel]");
+        panels.forEach(function (el) {
+            if (el.classList.contains("mobile-tab")) return;
+            el.classList.remove("mobile-active");
+        });
+
+        // Show the selected panel(s)
+        // "market" shows market-data-panel
+        // "trade" shows order-entry-panel
+        // "orders" shows blotter-panel
+        // "portfolio" shows positions-panel
+        var targets = document.querySelectorAll('.panel[data-panel="' + panel + '"]');
+        targets.forEach(function (el) {
+            el.classList.add("mobile-active");
+        });
+
+        // Update tab highlights
+        var tabs = document.querySelectorAll(".mobile-tab");
+        tabs.forEach(function (tab) {
+            if (tab.getAttribute("data-panel") === panel) {
+                tab.classList.add("active");
+            } else {
+                tab.classList.remove("active");
+            }
+        });
+
+        // Resize chart if portfolio tab
+        if (panel === "portfolio") {
+            setTimeout(resizePnlCanvas, 50);
+        }
+    };
+
+    window.toggleHeaderMenu = function () {
+        var menu = document.getElementById("header-menu");
+        if (!menu) return;
+        state.headerMenuOpen = !state.headerMenuOpen;
+        if (state.headerMenuOpen) {
+            menu.classList.add("open");
+        } else {
+            menu.classList.remove("open");
+        }
+    };
+
+    function resizePnlCanvas() {
+        var canvas = dom.pnlChart;
+        if (!canvas) return;
+        var container = canvas.parentElement;
+        if (!container) return;
+        var dpr = window.devicePixelRatio || 1;
+        var rect = container.getBoundingClientRect();
+        var w = rect.width - 16; // account for padding
+        var h = isMobile() ? 40 : 50;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        var ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        renderPnlChart();
+    }
+
+    // Close header menu when tapping outside
+    document.addEventListener("click", function (e) {
+        if (state.headerMenuOpen) {
+            var menu = document.getElementById("header-menu");
+            var btn = document.getElementById("header-menu-btn");
+            if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
+                state.headerMenuOpen = false;
+                menu.classList.remove("open");
+            }
+        }
+    });
+
+    // Debounced resize handler
+    var _resizeTimer = null;
+    window.addEventListener("resize", function () {
+        clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(function () {
+            if (isMobile()) {
+                switchMobilePanel(state.mobilePanel);
+            } else {
+                // Restore desktop: remove mobile-active from all panels, show all
+                var panels = document.querySelectorAll("[data-panel]");
+                panels.forEach(function (el) {
+                    if (el.classList.contains("mobile-tab")) return;
+                    el.classList.remove("mobile-active");
+                });
+            }
+            resizePnlCanvas();
+        }, 150);
+    });
+
+    // Hide tab bar on input focus (iOS keyboard)
+    document.addEventListener("focusin", function (e) {
+        if (!isMobile()) return;
+        var tag = e.target.tagName;
+        if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+            var tabs = document.getElementById("mobile-tabs");
+            if (tabs) tabs.style.display = "none";
+        }
+    });
+
+    document.addEventListener("focusout", function (e) {
+        if (!isMobile()) return;
+        setTimeout(function () {
+            var tabs = document.getElementById("mobile-tabs");
+            if (tabs) tabs.style.display = "";
+        }, 100);
+    });
+
     function init() {
         initMarketDataRows();
         onOrdTypeChange();
@@ -1729,6 +1854,12 @@
         connectWS("MKTDATA", WS_URLS.MKTDATA, onMarketData);
         connectWS("GUIBROKER", WS_URLS.GUIBROKER, onBrokerMessage);
         connectWS("POSMANAGER", WS_URLS.POSMANAGER, onPositionUpdate);
+
+        // Mobile initialization
+        if (isMobile()) {
+            switchMobilePanel(state.mobilePanel);
+        }
+        resizePnlCanvas();
 
         console.log("[App] Crypto Trading Terminal initialized");
     }

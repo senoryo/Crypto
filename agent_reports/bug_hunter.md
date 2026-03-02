@@ -1,264 +1,161 @@
 # Bug Hunter Agent Report
 
-## Mission
-Static analysis for async pitfalls, unbound variables, race conditions, silent exceptions, type coercion issues, logic errors, and code defects across all Python source files (excluding tests/, agents/, .git/, __pycache__/, venv/).
-
-## Files Scanned (24 files)
-
-| # | File |
-|---|------|
-| 1 | `shared/config.py` |
-| 2 | `shared/fix_protocol.py` |
-| 3 | `shared/ws_transport.py` |
-| 4 | `shared/risk_limits.py` |
-| 5 | `shared/logging_config.py` |
-| 6 | `shared/coinbase_auth.py` |
-| 7 | `shared/message_store.py` |
-| 8 | `shared/fix_engine.py` |
-| 9 | `om/order_manager.py` |
-| 10 | `guibroker/guibroker.py` |
-| 11 | `exchconn/exchconn.py` |
-| 12 | `exchconn/binance_sim.py` |
-| 13 | `exchconn/coinbase_sim.py` |
-| 14 | `exchconn/coinbase_adapter.py` |
-| 15 | `exchconn/coinbase_fix_adapter.py` |
-| 16 | `mktdata/mktdata.py` |
-| 17 | `mktdata/binance_feed.py` |
-| 18 | `mktdata/coinbase_feed.py` |
-| 19 | `mktdata/coinbase_live_feed.py` |
-| 20 | `mktdata/coinbase_fix_feed.py` |
-| 21 | `posmanager/posmanager.py` |
-| 22 | `gui/server.py` |
-| 23 | `run_all.py` |
-| 24 | `restart.py` |
+## Date: 2026-03-01
 
 ## Summary
 
-- **CRITICAL**: 3
-- **WARNING**: 25
-- **INFO**: 4
-- **Total Issues**: 32
-
----
-
-## CRITICAL Issues
-
-### C-1: Unsafe `float()` conversion on unvalidated price input before limit-order guard (OM)
-
-- **File**: `om/order_manager.py`, line 97
-- **Description**: In `_validate_order()`, the code calls `price = float(fix_msg.get(Tag.Price, "0"))` on line 97 *before* the `try/except ValueError` guard on lines 99-102. If `Tag.Price` contains a non-numeric string (e.g. "abc"), the `float()` on line 97 will raise an unhandled `ValueError`, crashing the entire message handler. The `try/except` block on lines 99-102 that was intended to catch this only covers the *second* assignment to `price`, which is dead code since `price` is already set.
-- **Recommendation**: Remove the premature `float()` on line 97, or move it inside the existing `try/except` on line 99. The code currently has two assignments to `price`: one unguarded on line 97 and one guarded on line 100 -- the guarded one is dead code when `ord_type == Limit` because line 97 already crashed.
-
-### C-2: Race condition -- `self.orders` dict shared across concurrent async tasks without lock (OM)
-
-- **File**: `om/order_manager.py`, lines 56, 215, 279, 432, 505-510, 521-580
-- **Description**: `self.orders` is a plain `dict` accessed from both `_handle_guibroker_message` (server handler, one per connected client) and `_handle_exchconn_message` (client listener) concurrently. While Python's GIL prevents data corruption, the interleaving of `await` points means one coroutine can read stale order state while another is mid-update. For example, `_handle_execution_report` reads `self.orders.get(cl_ord_id)` then modifies the order dict across multiple `await` points (fill processing, POSMANAGER send, GUIBROKER forward). Meanwhile, a cancel request from GUIBROKER could be processing the same order simultaneously. The `_positions` dict has a lock, but `self.orders` does not.
-- **Recommendation**: Wrap order-book reads and writes in an `asyncio.Lock` (similar to `_positions_lock`), or use a single-writer pattern to ensure execution report updates and new order processing do not interleave on the same order.
-
-### C-3: `_om_connected` flag read/written without synchronization -- messages silently queued forever (GUIBROKER)
-
-- **File**: `guibroker/guibroker.py`, lines 78, 315, 321, 356, 363-364
-- **Description**: `_om_connected` is set to `True` on line 356 during `_om_connect_and_listen`, and set to `False` on line 321 in `_send_to_om` (on error) and on line 363 in the `finally` block. The `_send_to_om` method (line 315) checks `self._om_connected and self._om_client._ws` as a guard. Since this is purely flag-based with no lock, there is a window where `_om_connected` is `True` but the websocket is stale (e.g. the connection dropped but `_om_connect_and_listen` hasn't reached the `finally` block yet). In this window, `send` will raise an exception, which sets `_om_connected = False` and queues the message. More critically, if the OM reconnects but `_flush_pending_queue` fails partway through, messages can be permanently lost or reordered. Also, `_send_to_om` accesses the internal `_om_client._ws` attribute directly, bypassing the `WSClient` abstraction.
-- **Recommendation**: Use an `asyncio.Lock` around the connected state and queue flush operations. Replace `self._om_client._ws` with a proper `is_connected()` method on `WSClient`.
-
----
-
-## WARNING Issues
-
-### W-1: Dead code -- redundant `price = float(...)` assignment
-
-- **File**: `om/order_manager.py`, line 100
-- **Description**: `price` is already assigned on line 97. The `try/except` block on lines 99-102 re-assigns `price` to the exact same expression. The except clause would only be reached if the `float()` on line 100 fails, but by that point line 97 already failed (or succeeded). This means the `try/except ValueError` guard on line 100 is dead code -- it can never catch an error that wasn't already raised on line 97.
-- **Recommendation**: Remove the redundant assignment on line 97 and keep only the guarded one on lines 99-102.
-
-### W-2: Unsafe `float()` on price for market orders
-
-- **File**: `om/order_manager.py`, line 196
-- **Description**: `price = float(fix_msg.get(Tag.Price, "0"))` can raise `ValueError` if the tag contains a non-numeric string. For market orders, `Tag.Price` may not be set by the factory function `new_order_single` (it skips setting price for market orders), so the default "0" is fine. However, if a malformed FIX message arrives with a garbage price tag, this line will crash.
-- **Recommendation**: Wrap in `try/except ValueError` or validate earlier.
-
-### W-3: Unsafe `float()` conversions in GUIBROKER `_handle_new_order`
-
-- **File**: `guibroker/guibroker.py`, lines 141, 143
-- **Description**: `qty = float(msg.get("qty", 0))` and `price = float(msg.get("price", 0))` can raise `ValueError` if the GUI sends non-numeric strings. The outer `try/except Exception` on line 133 will catch this, but the error message sent back to GUI (`Processing error: ...`) is generic and unhelpful.
-- **Recommendation**: Validate qty and price explicitly before conversion and return a clear error to the GUI.
-
-### W-4: Unsafe `float()` conversions in GUIBROKER `_handle_amend_order`
-
-- **File**: `guibroker/guibroker.py`, lines 213, 214
-- **Description**: Same issue as W-3 for the amend order handler.
-- **Recommendation**: Same as W-3.
-
-### W-5: Accessing private attribute `_om_client._ws` in GUIBROKER
-
-- **File**: `guibroker/guibroker.py`, line 315
-- **Description**: `self._om_connected and self._om_client._ws` directly accesses the internal `_ws` attribute of `WSClient`. This is fragile -- if the `WSClient` implementation changes, this breaks silently.
-- **Recommendation**: Add a public `is_connected` property to `WSClient` and use it instead.
-
-### W-6: Accessing private attribute `_om_client._ws` in GUIBROKER cleanup
-
-- **File**: `guibroker/guibroker.py`, line 364
-- **Description**: `self._om_client._ws = None` directly manipulates `WSClient` internals in the reconnect loop's `finally` block. This bypasses any cleanup logic inside `WSClient`.
-- **Recommendation**: Use `await self._om_client.close()` or add a `reset()` method.
-
-### W-7: Accessing private attribute `_client._connected` in CoinbaseFIXAdapter
-
-- **File**: `exchconn/coinbase_fix_adapter.py`, lines 128, 185, 230
-- **Description**: `self._client._connected` directly accesses the internal state of `FIXClient`. If `FIXClient` renames this attribute, these checks break silently.
-- **Recommendation**: Add a public `is_connected` property to `FIXClient`.
-
-### W-8: Dynamic attribute assignment on `_TrackedOrder` without `__slots__` or class-level declaration
-
-- **File**: `exchconn/coinbase_fix_adapter.py`, lines 266-267
-- **Description**: `self._orders[cl_ord_id]._amend_fallback_orig = orig_cl_ord_id` and `_amend_fallback_msg = fix_msg` dynamically add attributes to `_TrackedOrder` instances that are not declared in `__init__`. The `hasattr(tracked, "_amend_fallback_orig")` check on line 358 relies on this. This is fragile and confusing.
-- **Recommendation**: Add `_amend_fallback_orig` and `_amend_fallback_msg` as `Optional` attributes in `_TrackedOrder.__init__`.
-
-### W-9: `FIXSession.next_send_seq()` is not thread-safe / async-safe
-
-- **File**: `shared/fix_engine.py`, lines 136-138
-- **Description**: `_send_seq += 1` is a non-atomic read-modify-write. If multiple async tasks call `send()` concurrently on the same `FIXClient`, they could get duplicate sequence numbers. In practice, the `FIXClient.send()` goes through `_send_raw()` which uses `self._writer.write()` + `drain()`, but there is no lock ensuring atomicity of the stamp+write sequence.
-- **Recommendation**: Add an `asyncio.Lock` around `stamp_message` + `_send_raw` in `FIXClient.send()`.
-
-### W-10: `FIXSession.advance_recv_seq()` ignores the `expected` parameter
-
-- **File**: `shared/fix_engine.py`, line 140-141
-- **Description**: The method signature accepts an `expected` parameter but never uses it. The sequence number simply increments by 1. This means gap detection is not implemented -- if messages arrive out of order or with gaps, the session will not detect it.
-- **Recommendation**: Either implement gap detection using `expected`, or remove the parameter to avoid confusion.
-
-### W-11: `FIXClient._close_socket` does not await `_writer.wait_closed()`
-
-- **File**: `shared/fix_engine.py`, lines 518-528
-- **Description**: `_close_socket` calls `self._writer.close()` but never calls `await self._writer.wait_closed()`. Per Python docs, `close()` is not guaranteed to complete immediately -- `wait_closed()` should be awaited to ensure the transport is fully closed. However, since `_close_socket` is a sync method, it cannot `await`. This means the socket may not be fully cleaned up.
-- **Recommendation**: Convert `_close_socket` to an async method and await `wait_closed()`, or use a synchronous-safe pattern.
-
-### W-12: `_write_status` has a TOCTOU race on the status JSON file
-
-- **File**: `shared/fix_engine.py`, lines 531-556
-- **Description**: The method reads the existing status file, modifies it, and writes it back. If two `FIXClient` instances (e.g., FIX-ORD and FIX-MD) call `_write_status` simultaneously from different processes or async tasks, one write can overwrite the other's data. This is a classic Time-of-Check-to-Time-of-Use (TOCTOU) race.
-- **Recommendation**: Use file locking (`fcntl.flock` on Unix) or write to separate per-client status files.
-
-### W-13: `load_limits()` returns a shallow copy of `DEFAULT_RISK_LIMITS`
-
-- **File**: `shared/risk_limits.py`, line 25
-- **Description**: `dict(DEFAULT_RISK_LIMITS)` creates a shallow copy. The nested `max_order_qty` and `max_position_qty` dicts are shared references. If a caller modifies the returned dict's nested values, it mutates the module-level `DEFAULT_RISK_LIMITS` for all future calls.
-- **Recommendation**: Use `copy.deepcopy(DEFAULT_RISK_LIMITS)` or `json.loads(json.dumps(DEFAULT_RISK_LIMITS))`.
-
-### W-14: `save_limits()` does not validate input
-
-- **File**: `shared/risk_limits.py`, lines 28-31
-- **Description**: `save_limits(limits)` writes arbitrary dict content to `risk_limits.json` without validating the schema. A malformed dict from the GUI POST handler could corrupt the limits file, causing `check_order()` to fail on subsequent calls.
-- **Recommendation**: Validate that the dict has the expected keys and value types before writing.
-
-### W-15: `WSServer.broadcast` sends to a snapshot of clients but doesn't handle clients leaving mid-broadcast
-
-- **File**: `shared/ws_transport.py`, lines 64-71
-- **Description**: `self.clients - {exclude}` takes a snapshot, but `asyncio.gather` with `return_exceptions=True` means failed sends are silently swallowed. While `return_exceptions=True` prevents crashes, the exceptions are never logged, making it impossible to debug connection issues.
-- **Recommendation**: Log or inspect the results of `asyncio.gather` for exceptions.
-
-### W-16: `WSClient.listen()` re-enters `connect()` without clearing stale `_ws`
-
-- **File**: `shared/ws_transport.py`, lines 132-148
-- **Description**: In the `listen()` method, when a `ConnectionClosed` exception occurs, `self._ws` is set to `None` on line 143. On the next loop iteration, `connect()` is called. But if `connect()` was already called before `listen()` (which is normal), the existing `_ws` connection object from the initial `connect()` call is not explicitly closed -- it's just overwritten in `connect()`.
-- **Recommendation**: Ensure the old `_ws` is explicitly closed before reconnecting.
-
-### W-17: `PubSub.unsubscribe` raises `ValueError` if handler not found
-
-- **File**: `shared/ws_transport.py`, line 172
-- **Description**: `self._subscribers[topic].remove(handler)` raises `ValueError` if the handler is not in the list. This would propagate as an unhandled exception.
-- **Recommendation**: Use a try/except or check `if handler in list` before removing.
-
-### W-18: `message_store.store_message` opens a new SQLite connection for every message
-
-- **File**: `shared/message_store.py`, lines 67-102
-- **Description**: Every call to `store_message` creates a new `sqlite3.connect()`, writes one row, commits, and closes. This is extremely inefficient for high-throughput message logging (market data ticks happen multiple times per second per symbol). SQLite connection creation is expensive.
-- **Recommendation**: Use a connection pool, or keep a persistent connection per thread/process with WAL mode.
-
-### W-19: `message_store.cleanup()` called outside the lock on line 100
-
-- **File**: `shared/message_store.py`, lines 95-102
-- **Description**: `_insert_count` is incremented and checked inside `_insert_lock`, but `cleanup()` is called *inside* the lock. This means the lock is held during the potentially slow `cleanup()` DELETE operation, blocking all other `store_message` calls. However, the lock is a `threading.Lock` (not asyncio), and the code runs in async context, which could cause issues if called from an event loop thread.
-- **Recommendation**: Call `cleanup()` outside the lock, or use an `asyncio.Lock` since this runs in async context.
-
-### W-20: `gui/server.py` do_POST for `/api/troubleshoot` -- SSE stream error handling is fragile
-
-- **File**: `gui/server.py`, lines 283-341
-- **Description**: The troubleshoot endpoint sends `send_response(200)` and starts streaming SSE *before* the Anthropic API call completes. If the API call fails after headers are sent, the error handling on lines 333-341 tries to write an error message to the stream, but the HTTP response code is already 200. The client sees a 200 response with an error payload, which is confusing.
-- **Recommendation**: Buffer the response or use a proper SSE error event format.
-
-### W-21: `gui/server.py` -- `do_POST` for `/api/risk-limits` does not handle `Content-Length` of 0
-
-- **File**: `gui/server.py`, line 265
-- **Description**: `int(self.headers.get("Content-Length", 0))` returns 0 if the header is missing. `self.rfile.read(0)` returns `b""`, and `json.loads(b"")` raises `json.JSONDecodeError`. This is caught by the except on line 271, but the error message is unhelpful ("Expecting value: line 1 column 1 (char 0)").
-- **Recommendation**: Check for zero-length body explicitly and return a clear error.
-
-### W-22: `posmanager/posmanager.py` -- `_schedule_broadcast` uses `asyncio.ensure_future` inside `call_later`
-
-- **File**: `posmanager/posmanager.py`, lines 304-305
-- **Description**: `asyncio.get_running_loop().call_later(delay, lambda: asyncio.ensure_future(self._delayed_broadcast()))` creates a future inside a `call_later` callback. If the `_delayed_broadcast` coroutine raises an exception, the future is fire-and-forget -- the exception is silently lost. Also, `call_later` callbacks run outside the context of any await, so errors are harder to trace.
-- **Recommendation**: Store the returned `Future` object and add a done callback to log exceptions, or use `asyncio.create_task` instead and store the task reference.
-
-### W-23: `posmanager/posmanager.py` -- `_do_broadcast` re-parses JSON it just created
-
-- **File**: `posmanager/posmanager.py`, lines 316-318
-- **Description**: `_do_broadcast` calls `_build_position_update()` which `json.dumps()` the positions, then immediately calls `json.loads(msg)` to check if the positions list is empty. This is an unnecessary serialize-deserialize round-trip.
-- **Recommendation**: Refactor `_build_position_update` to return both the raw list and the JSON string, or check the list before serializing.
-
-### W-24: `om/order_manager.py` -- signal handler uses `asyncio.ensure_future` which is fire-and-forget
-
-- **File**: `om/order_manager.py`, line 654
-- **Description**: `asyncio.ensure_future(om.shutdown())` in the signal handler creates a coroutine that is not awaited. If `shutdown()` raises an exception, it will be silently lost.
-- **Recommendation**: Store the returned future/task and add a done callback for error logging.
-
-### W-25: `guibroker/guibroker.py` -- `_shutdown` function cancels all tasks including itself
-
-- **File**: `guibroker/guibroker.py`, lines 402-408
-- **Description**: `_shutdown` filters out `asyncio.current_task()` but then calls `loop.stop()`. Since `_shutdown` itself is a task created via `asyncio.ensure_future`, calling `loop.stop()` from inside a running task is fragile -- it may prevent the gather from completing cleanly.
-- **Recommendation**: Use `loop.call_soon(loop.stop)` to schedule the stop after the current iteration.
-
----
-
-## INFO Issues
-
-### I-1: `FIXMessage.decode` does not validate checksum
-
-- **File**: `shared/fix_protocol.py`, line 140-148
-- **Description**: The `decode` class method parses the checksum tag but does not verify it against the computed checksum. This means corrupted messages are accepted silently.
-- **Recommendation**: Add checksum validation for defense in depth.
-
-### I-2: `FIXMessage.encode` computes checksum over joined body but the checksum field's separator differs
-
-- **File**: `shared/fix_protocol.py`, lines 128-137
-- **Description**: The `encode` method uses `"|"` as the separator. The checksum is computed over the body *without* the final `|` before the checksum field. When the full message is reconstructed with `"|".join(parts)`, the checksum is appended with a `|` separator. This is consistent internally but differs from real FIX protocol which uses SOH. Since this is an internal transport format (real FIX uses `fix_engine.py`), this is only informational.
-- **Recommendation**: No action needed for internal use, but document the custom format.
-
-### I-3: `coinbase_adapter.py` -- duplicate code for market buy and sell
-
-- **File**: `exchconn/coinbase_adapter.py`, lines 174-190
-- **Description**: The `if cb_side == "BUY"` and `else` branches on lines 174-190 contain identical code. The comment on line 175 says "Market buy requires quote_size (USD amount)" but then uses `base_size` anyway, identical to the sell branch.
-- **Recommendation**: Remove the duplicate branch and handle both buy and sell with the same code, or implement the quote_size logic for market buys.
-
-### I-4: `restart.py` uses Windows-specific commands
-
-- **File**: `restart.py`, lines 33-36, 67-69
-- **Description**: `restart.py` uses `netstat -ano` and `taskkill /F /PID` which are Windows-specific. This script will fail on Linux/macOS (the environment is WSL Linux).
-- **Recommendation**: Add platform detection and use `lsof` / `kill` on Unix systems.
-
----
-
-## Pass/Fail Counts
-
-| Severity | Count |
-|----------|-------|
-| CRITICAL | 3 |
-| WARNING  | 25 |
-| INFO     | 4 |
-| **Total**| **32** |
-
-### Verdict
-
-**3 CRITICAL issues require attention before production use.**
-
-The most impactful issues are:
-1. **C-1**: Unhandled `ValueError` crash on malformed price input in OM's order validation -- a single malformed FIX message from GUIBROKER can crash the entire order handler.
-2. **C-2**: Order book race condition in OM -- concurrent execution report processing and new order/cancel handling on the same order can produce inconsistent state.
-3. **C-3**: GUIBROKER's OM connection state management is fragile -- messages can be silently lost or permanently queued during reconnection windows.
+Static analysis of 26 Python source files. Many issues from the prior round have been fixed: the OM orders lock is now used consistently, terminal order cleanup exists, the Binance/Coinbase simulator amend bugs are resolved, and fire-and-forget patterns now store tasks and log exceptions. This analysis found 10 remaining findings -- none critical, but several high-severity issues around concurrency, coupling, and error handling.
+
+## Findings
+
+### [HIGH] OM execution report handler mutates order dict outside the lock
+
+- **Category**: Concurrency (Learned Theme: shared mutable state across await boundaries)
+- **Location**: `om/order_manager.py`:566-677
+- **Issue**: `_handle_execution_report` acquires `self._orders_lock` to look up the order (lines 566-572) but then releases it before mutating the order dict's fields (lines 583-654) and before the `await` calls to send to GUIBROKER (line 665) and schedule cleanup (line 674). The order object is a plain dict stored in `self.orders` -- another concurrent handler (e.g., a new GUIBROKER cancel request or a second fill from EXCHCONN for the same order) can interleave between the dict reads and writes.
+  - Specifically, `order["status"]` is set on line 583, then execution-type-specific mutations happen (lines 585-658), and only then is the exec report forwarded. A second fill arriving between these steps could corrupt `cum_qty`, `avg_px`, or `leaves_qty`.
+- **Impact**: In the common case (single fill per order), this is safe. With partial fills from the simulator (1-3 chunks), two fill reports arriving in rapid succession could interleave and produce inconsistent order state, especially `avg_px` calculations.
+- **Suggested Fix**: Hold `self._orders_lock` for the entire duration of `_handle_execution_report`, including the mutations. The `await` calls for forwarding to GUIBROKER/POSMANAGER should be done after releasing the lock, using a local copy of the data needed for the messages.
+
+### [HIGH] OM `_cleanup_terminal_order` uses fire-and-forget `asyncio.ensure_future` from `call_later` callback
+
+- **Category**: Async Pitfalls (Learned Theme: fire-and-forget from call_later callbacks)
+- **Location**: `om/order_manager.py`:674-677
+- **Issue**: The code schedules terminal order cleanup via:
+  ```python
+  asyncio.get_running_loop().call_later(
+      60, lambda cid=cl_ord_id, oid=order["order_id"]: asyncio.ensure_future(
+          self._cleanup_terminal_order(cid, oid)
+      )
+  )
+  ```
+  `asyncio.ensure_future()` from a `call_later` callback returns a future that is not stored. If `_cleanup_terminal_order` raises an exception, it will be silently lost. This matches the Learned Theme about fire-and-forget coroutines from `call_later` callbacks.
+- **Impact**: If the lock acquisition in `_cleanup_terminal_order` fails or the dict operations error, the exception is silently discarded. The terminal order remains in memory permanently.
+- **Suggested Fix**: Store the task and add a done_callback for exception logging:
+  ```python
+  def _schedule_cleanup():
+      task = asyncio.ensure_future(self._cleanup_terminal_order(cid, oid))
+      task.add_done_callback(
+          lambda t: logger.error(f"Cleanup error: {t.exception()}")
+          if not t.cancelled() and t.exception() else None
+      )
+  asyncio.get_running_loop().call_later(60, _schedule_cleanup)
+  ```
+
+### [HIGH] Private attribute access `self._client._connected` in CoinbaseFIXAdapter
+
+- **Category**: Coupling (Learned Theme: private attribute access across module boundaries)
+- **Location**: `exchconn/coinbase_fix_adapter.py`:130, 187, 229
+- **Issue**: `CoinbaseFIXAdapter` directly accesses `self._client._connected` (a private attribute of `FIXClient`) in `submit_order`, `cancel_order`, and `amend_order`. `FIXClient` already provides a public `is_connected` property (line 242 of `fix_engine.py`) that returns the same value.
+- **Impact**: If `FIXClient` renames or restructures `_connected`, these accesses silently break. Changes to the public API would be caught; changes to private internals would not.
+- **Suggested Fix**: Replace all three occurrences of `self._client._connected` with `self._client.is_connected`.
+
+### [MEDIUM] Private attribute access `wire._fields` in CoinbaseFIXFeed
+
+- **Category**: Coupling (Learned Theme: private attribute access across module boundaries)
+- **Location**: `mktdata/coinbase_fix_feed.py`:130-136, 253
+- **Issue**: `CoinbaseFIXFeed._on_connected` directly appends to `wire._fields` (a private list of `FIXWireMessage`) using `wire._fields.append((269, "0"))` to add repeating group entries. `_parse_md_entries` also iterates `wire._fields`. The `FIXWireMessage.set()` method replaces the first occurrence of a tag, which is correct for non-repeating fields but cannot add multiple entries with the same tag. The direct `_fields` access is a workaround for a missing public API.
+- **Impact**: If `FIXWireMessage` changes its internal storage, this code silently breaks.
+- **Suggested Fix**: Add a public `add(tag, value)` method to `FIXWireMessage` for appending repeating group fields, and a public `fields` property or iterator for reading all fields.
+
+### [MEDIUM] `coinbase_adapter.py` -- duplicate BUY/SELL branches for market orders
+
+- **Category**: Logic Errors / Dead Code
+- **Location**: `exchconn/coinbase_adapter.py`:174-190
+- **Issue**: The `if cb_side == "BUY"` and `else` branches contain identical code. The comment says "Market buy requires quote_size (USD amount) -- use qty as a base-size workaround" but then uses `base_size` for both sides:
+  ```python
+  if cb_side == "BUY":
+      # Market buy requires quote_size (USD amount) — use qty as a base-size workaround
+      response = await asyncio.to_thread(
+          self._client.market_order,
+          client_order_id=cl_ord_id,
+          product_id=product_id,
+          side=cb_side,
+          base_size=str(qty),
+      )
+  else:
+      response = await asyncio.to_thread(
+          self._client.market_order,
+          client_order_id=cl_ord_id,
+          product_id=product_id,
+          side=cb_side,
+          base_size=str(qty),
+      )
+  ```
+  Either the BUY branch should use `quote_size` as the comment implies, or the branch is dead code.
+- **Impact**: If Coinbase requires `quote_size` for market buys (which it does for certain order configurations), market buy orders may be rejected at runtime. If `base_size` is acceptable for both, the dead branch makes the code harder to maintain.
+- **Suggested Fix**: Either implement `quote_size` for market buys (research Coinbase API docs), or collapse into a single code path and update the comment.
+
+### [MEDIUM] `message_store` persistent SQLite connection not safe for multi-threaded use
+
+- **Category**: Concurrency
+- **Location**: `shared/message_store.py`:68-76, 79-113
+- **Issue**: `_get_persistent_conn()` creates a single `sqlite3.Connection` stored in a module-level global without `check_same_thread=False`. The `_insert_lock` is a `threading.Lock` but only protects the insert counter (lines 103-107), not the `conn.execute()` and `conn.commit()` calls (lines 95-100). `gui/server.py` uses `socketserver.TCPServer` which is single-threaded by default, but if it is ever switched to `ThreadingTCPServer`, or if `store_message` is called concurrently from different threads, the unprotected shared connection will raise `sqlite3.ProgrammingError`.
+- **Impact**: Currently low risk (single-threaded HTTP server), but a latent issue that would surface if threading is introduced.
+- **Suggested Fix**: Either wrap the entire `store_message` database operations inside `_insert_lock`, OR use per-thread connections via `threading.local()`, OR pass `check_same_thread=False` to the connection and add locking.
+
+### [MEDIUM] GUIBROKER `_om_connect_and_listen` reconnection silently resets `_om_connected` without draining queue
+
+- **Category**: Error Handling / Logic Errors
+- **Location**: `guibroker/guibroker.py`:378-395
+- **Issue**: When the OM connection drops, the `finally` block sets `_om_connected = False` and calls `await self._om_client.close()`. However, `_om_client.close()` sets `self._running = False` inside WSClient, which prevents subsequent reconnection. The outer `while True` loop calls `self._om_client.connect()` again, but since `_running` was set to `False`, the `connect()` method (which checks `while self._running`) will exit immediately without actually connecting.
+
+  Actually, looking more carefully: `WSClient.close()` sets `self._running = False` (line 170) and `WSClient.connect()` loops `while self._running` (line 121). After `close()`, the next `connect()` call starts with `self._running = True` (line 120), so this is correct.
+
+  However, there is still a sequencing issue: `_flush_pending_queue` is called after setting `_om_connected = True` (line 384, 386). If `_flush_pending_queue` fails and throws, `_om_connected` remains `True` but the connection state is broken, and the `listen()` call on line 387 may also fail.
+- **Impact**: If flush fails, the connection state flag and actual connection state diverge temporarily. Messages queued during this window may be lost.
+- **Suggested Fix**: Wrap the flush+listen in a try block that resets `_om_connected` on failure before the `finally` clause runs.
+
+### [LOW] `FIXSession._recv_seq` directly mutated from `FIXClient._dispatch`
+
+- **Category**: Coupling
+- **Location**: `shared/fix_engine.py`:393
+- **Issue**: `FIXClient._dispatch` handles SequenceReset (MsgType=4) by directly setting `self.session._recv_seq = new_seq - 1`, bypassing the `advance_recv_seq()` public method. This couples the dispatch logic to the internal counter implementation of `FIXSession`.
+- **Impact**: If `FIXSession` changes how sequence numbers are tracked (e.g., adding validation or logging), this direct mutation will bypass it.
+- **Suggested Fix**: Add a `reset_recv_seq(new_seq)` method to `FIXSession` and use it from `_dispatch`.
+
+### [LOW] OM `_next_order_id` uses non-atomic read-modify-write counter
+
+- **Category**: Concurrency
+- **Location**: `om/order_manager.py`:75-78
+- **Issue**: `_next_order_id` does `self._order_id_counter += 1` without any lock. Currently safe because it is a synchronous method called from async contexts without an `await` between the call and use of the result. However, GUIBROKER uses `itertools.count(1)` (line 71 of guibroker.py) for the same purpose, which is inherently atomic.
+- **Impact**: Currently safe; maintenance hazard if an `await` is introduced.
+- **Suggested Fix**: Use `itertools.count(1)` for consistency with GUIBROKER.
+
+### [LOW] `gui/server.py` POST handler for `/api/risk-limits` may send `resp` undefined if `json.loads` fails mid-path
+
+- **Category**: Variable Safety
+- **Location**: `gui/server.py`:262-288
+- **Issue**: In the `do_POST` handler for `/api/risk-limits`, the `try` block on line 264 creates `resp` only inside the `try`/`except` blocks. However, the `self.send_header()` and `self.end_headers()` calls after the try/except (lines 285-288) are outside any error handling. If an exception type not caught by the except clauses (e.g., `UnicodeDecodeError`) is raised after `self.send_response()` but before `resp` is assigned, the code falls through to line 288 where `resp.encode("utf-8")` would raise `NameError` because `resp` is undefined.
+
+  However, looking more carefully, the current code structure has `self.send_response()` inside each branch of the try/except, and the subsequent `send_header`/`end_headers`/`wfile.write` calls are always reached with `resp` defined in all three branches (try success, ValueError/JSONDecodeError, OSError). The only gap is if an unexpected exception type (not caught) is raised -- but in that case, Python's default error handler would catch it. Still, the pattern is fragile.
+- **Impact**: Very low risk -- would require an uncaught exception type.
+- **Suggested Fix**: Move the common `send_header`/`end_headers`/`wfile.write` into each branch, or use a `finally` block with a default response.
+
+## Previously Fixed Issues (Verified)
+
+The following issues from the prior report have been verified as resolved:
+
+1. **[CRITICAL] BinanceSimulator.amend_order wrong argument type** -- Fixed. Lines 440-445 now correctly pass `order` (SimulatedOrder) and `fill_price` to `_execute_fill`.
+2. **[CRITICAL] CoinbaseSimulator.amend_order wrong argument type** -- Fixed. Lines 429-434 now correctly pass `order` and `fill_price`.
+3. **[HIGH] OM orders dict accessed without lock** -- Fixed. `self._orders_lock` is now acquired in all code paths: `_handle_guibroker_connect` (line 148), `_validate_order` via `_handle_new_order` (line 188), `_handle_new_order` insert (line 238), cancel/amend handlers (lines 280, 303, 336, 475), `_handle_order_status_request` (line 506), `_handle_execution_report` (line 566), and `_cleanup_terminal_order` (line 682).
+4. **[HIGH] OM order book grows without bound** -- Fixed. `_cleanup_terminal_order` method (lines 680-687) removes orders 60 seconds after reaching terminal state, scheduled via `call_later` (line 674).
+5. **[HIGH] GUIBROKER fire-and-forget shutdown task** -- Improved. Signal handler now stores task and adds done_callback with `not t.cancelled()` guard (lines 426-429).
+6. **[MEDIUM] `_flush_pending_queue` not holding lock** -- Fixed. Now acquires `self._om_lock` (line 355).
+7. **[MEDIUM] POSMANAGER delayed broadcast CancelledError** -- Fixed. Done callback now guards with `not t.cancelled()` (line 311).
+8. **Unbound `price` variable in OM `_validate_order`** -- Fixed. Price initialized to `0.0` on line 98 before conditionals.
+
+## No Issues Found
+
+The following categories were checked and found clean:
+
+- **Missing await**: All coroutine calls are properly awaited.
+- **Fire-and-forget tasks (general)**: Most `asyncio.create_task()` calls store the returned task with cleanup in `stop()` methods.
+- **Off-by-one errors**: Loop bounds and slice indices correct throughout.
+- **Incorrect operator usage**: No `=` vs `==`, `and` vs `or`, or `is` vs `==` misuse found.
+- **FIX engine send atomicity**: `FIXClient.send()` correctly uses `self._send_lock` for atomic stamp+write.
+- **FIX engine status file locking**: `_write_status` uses `fcntl.flock(LOCK_EX)` correctly.
+- **`risk_limits.load_limits()` deep copy**: Correctly uses `copy.deepcopy()`.
+- **`risk_limits.save_limits()` validation**: Validates keys and types before writing.
+- **Resource leaks in WSClient**: `listen()` method properly closes WebSocket in error paths.
+- **FIXClient `_close_socket`**: Correctly async with `await self._writer.wait_closed()`.

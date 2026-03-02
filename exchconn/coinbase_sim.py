@@ -428,6 +428,7 @@ class CoinbaseSimulator:
         # Restart fill sequence for amended order
         if order.is_active and order.leaves_qty > 0:
             if order.ord_type == OrdType.Market:
+                fill_price = self._get_current_price(order.symbol)
                 self._fill_tasks[order_id] = asyncio.create_task(
-                    self._execute_fill(order_id)
+                    self._execute_fill(order, fill_price)
                 )

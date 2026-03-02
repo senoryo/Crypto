@@ -299,3 +299,83 @@ class TestSanityCheck:
         await connector._handle_message(ws, raw)
 
         binance.submit_order.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_allows_large_ada_doge_qty(self, connector_env):
+        """H-5: MAX_ORDER_QTY should be high enough for ADA/DOGE coins."""
+        connector, binance, coinbase, server = connector_env
+        msg = new_order_single("C1", "ADA/USD", Side.Buy, 50000.0, OrdType.Limit, 0.72, exchange="COINBASE")
+        raw = msg.to_json()
+
+        ws = AsyncMock()
+        await connector._handle_message(ws, raw)
+
+        coinbase.submit_order.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Amend sanity check (H-5)
+# ---------------------------------------------------------------------------
+
+class TestAmendSanityCheck:
+
+    @pytest.mark.asyncio
+    async def test_amend_rejects_zero_qty(self, connector_env):
+        connector, binance, coinbase, server = connector_env
+        msg = cancel_replace_request("AMD-1", "C1", "BTC/USD", Side.Buy, 0.0, 68000.0)
+        msg.set(Tag.ExDestination, "BINANCE")
+        raw = msg.to_json()
+
+        ws = AsyncMock()
+        connector._om_clients.add(ws)
+        await connector._handle_message(ws, raw)
+
+        binance.amend_order.assert_not_called()
+        server.send_to.assert_called_once()
+        sent = FIXMessage.from_json(server.send_to.call_args[0][1])
+        assert sent.get(Tag.ExecType) == ExecType.Rejected
+        assert "Invalid amend quantity" in sent.get(Tag.Text)
+
+    @pytest.mark.asyncio
+    async def test_amend_rejects_negative_qty(self, connector_env):
+        connector, binance, coinbase, server = connector_env
+        msg = cancel_replace_request("AMD-1", "C1", "BTC/USD", Side.Buy, 5.0, 68000.0)
+        msg.set(Tag.OrderQty, "-5")
+        msg.set(Tag.ExDestination, "BINANCE")
+        raw = msg.to_json()
+
+        ws = AsyncMock()
+        connector._om_clients.add(ws)
+        await connector._handle_message(ws, raw)
+
+        binance.amend_order.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_amend_rejects_qty_above_safety_limit(self, connector_env):
+        connector, binance, coinbase, server = connector_env
+        from exchconn.exchconn import MAX_ORDER_QTY
+        msg = cancel_replace_request("AMD-1", "C1", "BTC/USD", Side.Buy, MAX_ORDER_QTY + 1, 68000.0)
+        msg.set(Tag.ExDestination, "BINANCE")
+        raw = msg.to_json()
+
+        ws = AsyncMock()
+        connector._om_clients.add(ws)
+        await connector._handle_message(ws, raw)
+
+        binance.amend_order.assert_not_called()
+        server.send_to.assert_called_once()
+        sent = FIXMessage.from_json(server.send_to.call_args[0][1])
+        assert sent.get(Tag.ExecType) == ExecType.Rejected
+        assert "safety limit" in sent.get(Tag.Text)
+
+    @pytest.mark.asyncio
+    async def test_amend_allows_valid_qty(self, connector_env):
+        connector, binance, coinbase, server = connector_env
+        msg = cancel_replace_request("AMD-1", "C1", "BTC/USD", Side.Buy, 2.0, 68000.0)
+        msg.set(Tag.ExDestination, "BINANCE")
+        raw = msg.to_json()
+
+        ws = AsyncMock()
+        await connector._handle_message(ws, raw)
+
+        binance.amend_order.assert_called_once()

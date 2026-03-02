@@ -352,16 +352,17 @@ class GUIBroker:
                 logger.info(f"OM not connected. Queued message (queue size: {len(self._pending_queue)})")
 
     async def _flush_pending_queue(self):
-        while self._pending_queue and self._om_connected:
-            message = self._pending_queue.popleft()
-            try:
-                await self._om_client.send(message)
-                logger.info(f"Flushed queued message to OM")
-            except Exception as e:
-                logger.error(f"Failed to flush message to OM: {e}")
-                self._pending_queue.appendleft(message)
-                self._om_connected = False
-                break
+        async with self._om_lock:
+            while self._pending_queue and self._om_connected:
+                message = self._pending_queue.popleft()
+                try:
+                    await self._om_client.send(message)
+                    logger.info(f"Flushed queued message to OM")
+                except Exception as e:
+                    logger.error(f"Failed to flush message to OM: {e}")
+                    self._pending_queue.appendleft(message)
+                    self._om_connected = False
+                    break
 
     async def _send_error_to_gui(self, websocket: ServerConnection, error: str):
         msg = json.dumps({"type": "error", "message": error})
@@ -421,8 +422,14 @@ async def main():
 
     # Graceful shutdown on SIGINT/SIGTERM (Unix only)
     if sys.platform != "win32":
+        def _signal_handler():
+            task = asyncio.ensure_future(_shutdown(loop))
+            task.add_done_callback(
+                lambda t: logger.error(f"Shutdown error: {t.exception()}")
+                if not t.cancelled() and t.exception() else None
+            )
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: asyncio.ensure_future(_shutdown(loop)))
+            loop.add_signal_handler(sig, _signal_handler)
 
     await broker.run()
 

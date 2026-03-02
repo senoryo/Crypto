@@ -318,3 +318,49 @@ class TestHandleExecutionReport:
         )
         await order_manager._handle_execution_report(report)
         assert order_manager._positions["ETH/USD"] == 5.0
+
+
+# -----------------------------------------------------------------------
+# TestTerminalOrderCleanup (H-4)
+# -----------------------------------------------------------------------
+
+class TestTerminalOrderCleanup:
+
+    @pytest.mark.asyncio
+    async def test_filled_order_schedules_cleanup(self, order_manager, mock_websocket):
+        """H-4: Terminal orders should schedule cleanup after processing."""
+        order_manager.orders["GUI-1"] = {
+            "cl_ord_id": "GUI-1", "order_id": "OM-000001",
+            "symbol": "BTC/USD", "side": "1", "qty": 1.0, "price": 67000.0,
+            "ord_type": OrdType.Limit, "exchange": "BINANCE",
+            "status": OrdStatus.New, "cum_qty": 0.0, "avg_px": 0.0,
+            "leaves_qty": 1.0, "source_ws": mock_websocket, "created_at": 0,
+        }
+        order_manager._om_id_to_cl_ord_id["OM-000001"] = "GUI-1"
+
+        report = execution_report(
+            "GUI-1", "OM-000001", ExecType.Trade, OrdStatus.Filled,
+            "BTC/USD", Side.Buy, 0.0, 1.0, 67000.0, 67000.0, 1.0,
+        )
+        await order_manager._handle_execution_report(report)
+        # Order still exists immediately (cleanup is delayed 60s)
+        assert "GUI-1" in order_manager.orders
+        # But _cleanup_terminal_order should remove it when called directly
+        await order_manager._cleanup_terminal_order("GUI-1", "OM-000001")
+        assert "GUI-1" not in order_manager.orders
+        assert "OM-000001" not in order_manager._om_id_to_cl_ord_id
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_non_terminal_order(self, order_manager, mock_websocket):
+        """Cleanup should not remove orders that are still active."""
+        order_manager.orders["GUI-1"] = {
+            "cl_ord_id": "GUI-1", "order_id": "OM-000001",
+            "symbol": "BTC/USD", "side": "1", "qty": 1.0, "price": 67000.0,
+            "ord_type": OrdType.Limit, "exchange": "BINANCE",
+            "status": OrdStatus.New, "cum_qty": 0.0, "avg_px": 0.0,
+            "leaves_qty": 1.0, "source_ws": mock_websocket, "created_at": 0,
+        }
+        order_manager._om_id_to_cl_ord_id["OM-000001"] = "GUI-1"
+        # Should not delete because status is New
+        await order_manager._cleanup_terminal_order("GUI-1", "OM-000001")
+        assert "GUI-1" in order_manager.orders

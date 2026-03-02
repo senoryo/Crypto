@@ -208,3 +208,22 @@ class TestFactoryFunctions:
         assert msg.get(Tag.OrigClOrdID) == "C1"
         assert msg.get(Tag.OrderQty) == "3.0"
         assert msg.get(Tag.Price) == "68000.0"
+
+    def test_execution_report_with_order_qty_and_price(self):
+        """M-1: execution_report factory should set OrderQty and Price when provided."""
+        msg = execution_report(
+            "C1", "OM-1", ExecType.Replaced, OrdStatus.Replaced,
+            "BTC/USD", Side.Buy, 2.0, 0.0, 0.0,
+            order_qty=5.0, price=68000.0,
+        )
+        assert msg.get(Tag.OrderQty) == "5.0"
+        assert msg.get(Tag.Price) == "68000.0"
+
+    def test_execution_report_omits_zero_order_qty_and_price(self):
+        """M-1: execution_report should not set OrderQty/Price when zero."""
+        msg = execution_report(
+            "C1", "OM-1", ExecType.New, OrdStatus.New,
+            "BTC/USD", Side.Buy, 1.0, 0.0, 0.0,
+        )
+        assert msg.get(Tag.OrderQty) == ""
+        assert msg.get(Tag.Price) == ""

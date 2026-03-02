@@ -64,9 +64,22 @@ async def _ws_proxy(request: web.Request) -> web.WebSocketResponse:
                 break
 
     try:
-        await asyncio.gather(_browser_to_backend(), _backend_to_browser())
-    except Exception:
-        pass
+        tasks = [
+            asyncio.create_task(_browser_to_backend()),
+            asyncio.create_task(_backend_to_browser()),
+        ]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        for task in done:
+            if task.exception():
+                logger.warning("WS proxy task error: %s", task.exception())
+    except Exception as exc:
+        logger.warning("WS proxy error: %s", exc)
     finally:
         await backend_ws.close()
         await session.close()

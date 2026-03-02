@@ -145,10 +145,11 @@ class OrderManager:
         # Update source_ws for all open orders to the new connection,
         # so exec reports for pre-existing orders are delivered correctly
         updated = 0
-        for order in self.orders.values():
-            if order["status"] in (OrdStatus.New, OrdStatus.PendingNew, OrdStatus.PartiallyFilled):
-                order["source_ws"] = websocket
-                updated += 1
+        async with self._orders_lock:
+            for order in self.orders.values():
+                if order["status"] in (OrdStatus.New, OrdStatus.PendingNew, OrdStatus.PartiallyFilled):
+                    order["source_ws"] = websocket
+                    updated += 1
         if updated:
             logger.info(f"Updated source_ws for {updated} open orders to new GUIBROKER connection")
 
@@ -183,8 +184,9 @@ class OrderManager:
         """Process a NewOrderSingle from GUIBROKER."""
         cl_ord_id = fix_msg.get(Tag.ClOrdID)
 
-        # Risk checks
-        reject_reason = self._validate_order(fix_msg)
+        # Risk checks (acquire lock since _validate_order reads self.orders)
+        async with self._orders_lock:
+            reject_reason = self._validate_order(fix_msg)
         if reject_reason:
             logger.warning(f"Order rejected [{cl_ord_id}]: {reject_reason}")
             reject = execution_report(
@@ -233,8 +235,9 @@ class OrderManager:
             "source_ws": websocket,
             "created_at": time.time(),
         }
-        self.orders[cl_ord_id] = order
-        self._om_id_to_cl_ord_id[order_id] = cl_ord_id
+        async with self._orders_lock:
+            self.orders[cl_ord_id] = order
+            self._om_id_to_cl_ord_id[order_id] = cl_ord_id
 
         logger.info(
             f"New order accepted: {order_id} cl_ord_id={cl_ord_id} "
@@ -274,7 +277,8 @@ class OrderManager:
         orig_cl_ord_id = fix_msg.get(Tag.OrigClOrdID)
         cl_ord_id = fix_msg.get(Tag.ClOrdID)
 
-        order = self.orders.get(orig_cl_ord_id)
+        async with self._orders_lock:
+            order = self.orders.get(orig_cl_ord_id)
         if not order:
             logger.warning(f"Cancel request for unknown order: {orig_cl_ord_id}")
             reject = execution_report(
@@ -296,8 +300,9 @@ class OrderManager:
 
         # Map the new ClOrdID back to the original order so we can look it up
         # when the Canceled exec report comes back from EXCHCONN
-        if cl_ord_id != orig_cl_ord_id:
-            self.orders[cl_ord_id] = order
+        async with self._orders_lock:
+            if cl_ord_id != orig_cl_ord_id:
+                self.orders[cl_ord_id] = order
 
         # Add OM order ID and forward
         fix_msg.set(Tag.OrderID, order["order_id"])
@@ -328,7 +333,8 @@ class OrderManager:
         orig_cl_ord_id = fix_msg.get(Tag.OrigClOrdID)
         cl_ord_id = fix_msg.get(Tag.ClOrdID)
 
-        order = self.orders.get(orig_cl_ord_id)
+        async with self._orders_lock:
+            order = self.orders.get(orig_cl_ord_id)
         if not order:
             logger.warning(f"Amend request for unknown order: {orig_cl_ord_id}")
             reject = execution_report(
@@ -466,8 +472,9 @@ class OrderManager:
 
         # Map the new ClOrdID back to the original order so we can look it up
         # when the Replaced exec report comes back from EXCHCONN
-        if cl_ord_id != orig_cl_ord_id:
-            self.orders[cl_ord_id] = order
+        async with self._orders_lock:
+            if cl_ord_id != orig_cl_ord_id:
+                self.orders[cl_ord_id] = order
 
         # Forward to EXCHCONN
         fix_msg.set(Tag.OrderID, order["order_id"])
@@ -496,7 +503,8 @@ class OrderManager:
     async def _handle_order_status_request(self, websocket, fix_msg: FIXMessage):
         """Return current order status from internal book."""
         cl_ord_id = fix_msg.get(Tag.ClOrdID)
-        order = self.orders.get(cl_ord_id)
+        async with self._orders_lock:
+            order = self.orders.get(cl_ord_id)
 
         if not order:
             reject = execution_report(
@@ -555,12 +563,13 @@ class OrderManager:
         exec_type = fix_msg.get(Tag.ExecType)
         ord_status = fix_msg.get(Tag.OrdStatus)
 
-        order = self.orders.get(cl_ord_id)
-        if not order:
-            # Try reverse lookup by OM order ID
-            order_id = fix_msg.get(Tag.OrderID)
-            cl_ord_id = self._om_id_to_cl_ord_id.get(order_id, "")
+        async with self._orders_lock:
             order = self.orders.get(cl_ord_id)
+            if not order:
+                # Try reverse lookup by OM order ID
+                order_id = fix_msg.get(Tag.OrderID)
+                cl_ord_id = self._om_id_to_cl_ord_id.get(order_id, "")
+                order = self.orders.get(cl_ord_id)
 
         if not order:
             logger.warning(
@@ -659,6 +668,23 @@ class OrderManager:
                 logger.error(f"Failed to forward exec report to GUIBROKER: {e}")
         else:
             logger.warning(f"No source WS for order {order['order_id']}, cannot forward")
+
+        # Schedule cleanup of terminal orders to prevent unbounded growth
+        if ord_status in (OrdStatus.Filled, OrdStatus.Canceled, OrdStatus.Rejected):
+            asyncio.get_running_loop().call_later(
+                60, lambda cid=cl_ord_id, oid=order["order_id"]: asyncio.ensure_future(
+                    self._cleanup_terminal_order(cid, oid)
+                )
+            )
+
+    async def _cleanup_terminal_order(self, cl_ord_id: str, order_id: str):
+        """Remove a terminal order from internal tracking after a delay."""
+        async with self._orders_lock:
+            order = self.orders.get(cl_ord_id)
+            if order and order.get("status") in (OrdStatus.Filled, OrdStatus.Canceled, OrdStatus.Rejected):
+                del self.orders[cl_ord_id]
+                self._om_id_to_cl_ord_id.pop(order_id, None)
+                logger.debug(f"Cleaned up terminal order: {order_id} (cl={cl_ord_id})")
 
     # ---------------------------------------------------------------
     # Lifecycle

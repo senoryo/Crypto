@@ -179,3 +179,37 @@ class TestBinanceAmendOrder:
         await sim.amend_order(amend)
         # New cl_ord_id should map to the same order
         assert sim._cl_to_order["AMD-1"] == sim._cl_to_order["C1"]
+
+    @pytest.mark.asyncio
+    async def test_amend_market_order_schedules_fill_correctly(self, sim):
+        """C-1: After amending a market order, _execute_fill must receive
+        the SimulatedOrder and fill_price, not order_id string."""
+        msg = new_order_single("C1", "BTC/USD", Side.Buy, 1.0, OrdType.Market)
+        await sim.submit_order(msg)
+
+        order_id = sim._cl_to_order["C1"]
+        # Cancel the initial fill task so amend can restart it
+        sim._fill_tasks[order_id].cancel()
+        try:
+            await sim._fill_tasks[order_id]
+        except asyncio.CancelledError:
+            pass
+        sim._fill_tasks.pop(order_id, None)
+
+        # Mark order active again for amend
+        order = sim._orders[order_id]
+        order.is_active = True
+        order.leaves_qty = 1.0
+        sim._report_callback.reset_mock()
+
+        amend = cancel_replace_request("AMD-1", "C1", "BTC/USD", Side.Buy, 2.0, 0.0)
+        await sim.amend_order(amend)
+
+        # The fill task should be scheduled and not raise TypeError
+        assert order_id in sim._fill_tasks
+        # Clean up
+        sim._fill_tasks[order_id].cancel()
+        try:
+            await sim._fill_tasks[order_id]
+        except asyncio.CancelledError:
+            pass

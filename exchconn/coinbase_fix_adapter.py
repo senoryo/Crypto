@@ -323,6 +323,10 @@ class CoinbaseFIXAdapter:
             + (f" text={text}" if text else "")
         )
 
+        # Read OrderQty and Price from wire message
+        wire_order_qty = wire.get_float(38)
+        wire_price = wire.get_float(44)
+
         # Build internal execution report
         report = execution_report(
             cl_ord_id=cl_ord_id,
@@ -338,6 +342,10 @@ class CoinbaseFIXAdapter:
             last_qty=last_qty,
             text=text,
         )
+        if wire_order_qty:
+            report.set(Tag.OrderQty, wire_order_qty)
+        if wire_price:
+            report.set(Tag.Price, wire_price)
         await self._send_report(report)
 
     async def _handle_cancel_reject(self, wire: FIXWireMessage):
@@ -354,7 +362,7 @@ class CoinbaseFIXAdapter:
 
         # Check if this was an amend rejection — fall back to cancel+new
         tracked = self._orders.get(cl_ord_id)
-        if tracked and hasattr(tracked, "_amend_fallback_orig"):
+        if tracked and tracked._amend_fallback_orig is not None:
             logger.info(f"[{self.name}] Amend rejected, falling back to cancel+new")
             # Cancel the original
             orig_tracked = self._orders.get(tracked._amend_fallback_orig)

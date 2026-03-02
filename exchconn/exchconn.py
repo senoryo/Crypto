@@ -30,7 +30,8 @@ else:
     from exchconn.coinbase_sim import CoinbaseSimulator as CoinbaseExchange
 
 # Defense-in-depth hard safety limit — reject orders exceeding this qty
-MAX_ORDER_QTY = 1000
+# Set high to avoid conflicting with OM risk limits for large-quantity coins (ADA, DOGE)
+MAX_ORDER_QTY = 1_000_000
 
 logger = setup_component_logging("EXCHCONN")
 
@@ -130,6 +131,19 @@ class ExchangeConnector:
             elif msg_type == MsgType.OrderCancelRequest:
                 await exchange.cancel_order(fix_msg)
             elif msg_type == MsgType.OrderCancelReplaceRequest:
+                # Defense-in-depth: sanity check on amended qty
+                try:
+                    amend_qty = float(fix_msg.get(Tag.OrderQty, "0"))
+                except (ValueError, TypeError):
+                    amend_qty = 0.0
+                if amend_qty <= 0:
+                    logger.warning(f"Amend sanity check failed: qty={amend_qty} <= 0 for cl={fix_msg.get(Tag.ClOrdID)}")
+                    await self._send_reject(websocket, fix_msg, f"Invalid amend quantity: {amend_qty}")
+                    return
+                if amend_qty > MAX_ORDER_QTY:
+                    logger.warning(f"Amend sanity check failed: qty={amend_qty} > max {MAX_ORDER_QTY} for cl={fix_msg.get(Tag.ClOrdID)}")
+                    await self._send_reject(websocket, fix_msg, f"Amend quantity {amend_qty} exceeds safety limit of {MAX_ORDER_QTY}")
+                    return
                 await exchange.amend_order(fix_msg)
             else:
                 logger.warning(f"Unhandled message type: {msg_type}")

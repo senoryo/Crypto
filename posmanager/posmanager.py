@@ -309,7 +309,7 @@ class PositionManager:
                     task = asyncio.ensure_future(self._delayed_broadcast())
                     task.add_done_callback(
                         lambda t: logger.error(f"Delayed broadcast error: {t.exception()}")
-                        if t.exception() else None
+                        if not t.cancelled() and t.exception() else None
                     )
 
                 asyncio.get_running_loop().call_later(delay, _schedule_delayed)

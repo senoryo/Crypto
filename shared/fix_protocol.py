@@ -202,6 +202,8 @@ def execution_report(
     last_px: float = 0.0,
     last_qty: float = 0.0,
     text: str = "",
+    order_qty: float = 0.0,
+    price: float = 0.0,
 ) -> FIXMessage:
     """Create an ExecutionReport FIX message."""
     msg = FIXMessage(MsgType.ExecutionReport)
@@ -220,6 +222,10 @@ def execution_report(
         msg.set(Tag.LastQty, last_qty)
     if text:
         msg.set(Tag.Text, text)
+    if order_qty:
+        msg.set(Tag.OrderQty, order_qty)
+    if price:
+        msg.set(Tag.Price, price)
     return msg
 
 

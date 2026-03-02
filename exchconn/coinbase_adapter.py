@@ -374,6 +374,8 @@ class CoinbaseAdapter:
             cum_qty=round(tracked.cum_qty, 8),
             avg_px=round(tracked.avg_px, 8),
         )
+        report.set(Tag.OrderQty, round(tracked.total_qty, 8))
+        report.set(Tag.Price, round(tracked.price, 8))
         await self._send_report(report)
 
     # ---- Fill monitoring: WebSocket (production) ----
@@ -504,18 +506,22 @@ class CoinbaseAdapter:
                     tracked.is_terminal = True
                     tracked.leaves_qty = 0.0
                     if status == "CANCELLED":
-                        report = execution_report(
-                            cl_ord_id=tracked.cl_ord_id,
-                            order_id=cb_order_id,
-                            exec_type=ExecType.Canceled,
-                            ord_status=OrdStatus.Canceled,
-                            symbol=tracked.symbol,
-                            side=tracked.side,
-                            leaves_qty=0.0,
-                            cum_qty=round(tracked.cum_qty, 8),
-                            avg_px=round(tracked.avg_px, 8),
-                        )
-                        await self._send_report(report)
+                        et, os_ = ExecType.Canceled, OrdStatus.Canceled
+                    else:  # EXPIRED, FAILED
+                        et, os_ = ExecType.Rejected, OrdStatus.Rejected
+                    report = execution_report(
+                        cl_ord_id=tracked.cl_ord_id,
+                        order_id=cb_order_id,
+                        exec_type=et,
+                        ord_status=os_,
+                        symbol=tracked.symbol,
+                        side=tracked.side,
+                        leaves_qty=0.0,
+                        cum_qty=round(tracked.cum_qty, 8),
+                        avg_px=round(tracked.avg_px, 8),
+                        text=f"Order {status} (WS)",
+                    )
+                    await self._send_report(report)
 
     # ---- Fill monitoring: REST polling (sandbox) ----
 

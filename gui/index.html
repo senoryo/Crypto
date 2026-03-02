@@ -12,6 +12,7 @@
     <div id="header">
         <h1>CRYPTO TRADING TERMINAL</h1>
         <div class="conn-status">
+            <button id="header-menu-btn" onclick="toggleHeaderMenu()" aria-label="Menu">&#9776;</button>
             <span class="header-clock" id="header-clock">--:--:--</span>
             <span class="env-badge" id="env-badge">LOADING</span>
             <button class="status-btn" id="status-btn" onclick="openStatusModal()" title="System Status"><span class="status-btn-dot" id="status-btn-dot"></span> SYSTEM STATUS</button>
@@ -20,6 +21,13 @@
             <button class="config-btn" id="troubleshoot-btn" onclick="openTroubleshootModal()" title="AI Troubleshoot">TROUBLESHOOT</button>
             <button class="config-btn" id="records-btn" onclick="openRecordsModal()" title="Message Records">RECORDS</button>
         </div>
+        <nav id="header-menu">
+            <button class="header-menu-item" onclick="openStatusModal(); toggleHeaderMenu()">System Status</button>
+            <button class="header-menu-item" onclick="openRiskModal(); toggleHeaderMenu()">Risk Limits</button>
+            <button class="header-menu-item" onclick="openConfigModal(); toggleHeaderMenu()">Configuration</button>
+            <button class="header-menu-item" onclick="openTroubleshootModal(); toggleHeaderMenu()">Troubleshoot</button>
+            <button class="header-menu-item" onclick="openRecordsModal(); toggleHeaderMenu()">Records</button>
+        </nav>
     </div>
 
     <!-- Main Grid -->
@@ -27,7 +35,7 @@
         <!-- Left Column: Market Data + Order Entry -->
         <div id="left-col">
             <!-- Market Data Panel -->
-            <div class="panel" id="market-data-panel">
+            <div class="panel" id="market-data-panel" data-panel="market">
                 <div class="panel-header">
                     <span>Market Data</span>
                 </div>
@@ -35,13 +43,13 @@
                     <table class="md-table">
                         <thead>
                             <tr>
-                                <th>Symbol</th>
-                                <th>Bid</th>
-                                <th>Ask</th>
-                                <th>Sprd</th>
-                                <th>Last</th>
-                                <th>Mid</th>
-                                <th>Vol</th>
+                                <th data-col="symbol">Symbol</th>
+                                <th data-col="bid">Bid</th>
+                                <th data-col="ask">Ask</th>
+                                <th data-col="spread">Sprd</th>
+                                <th data-col="last">Last</th>
+                                <th data-col="mid">Mid</th>
+                                <th data-col="volume">Vol</th>
                             </tr>
                         </thead>
                         <tbody id="md-tbody"></tbody>
@@ -50,7 +58,7 @@
             </div>
 
             <!-- Order Entry Panel -->
-            <div class="panel" id="order-entry-panel">
+            <div class="panel" id="order-entry-panel" data-panel="trade">
                 <div class="panel-header">
                     <span>Order Entry</span>
                 </div>
@@ -112,7 +120,7 @@
         </div>
 
         <!-- Order Blotter -->
-        <div class="panel" id="blotter-panel" style="grid-column:2; grid-row:1;">
+        <div class="panel" id="blotter-panel" data-panel="orders" style="grid-column:2; grid-row:1;">
             <div class="panel-header">
                 <div class="blotter-tabs">
                     <button class="blotter-tab active" id="tab-orders" onclick="switchBlotterTab('orders')">Orders</button>
@@ -127,17 +135,17 @@
                 <table class="blotter-table">
                     <thead>
                         <tr>
-                            <th>ClOrdID</th>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Filled</th>
-                            <th>AvgPx</th>
-                            <th>Exchange</th>
-                            <th>Actions</th>
+                            <th data-col="clordid">ClOrdID</th>
+                            <th data-col="symbol">Symbol</th>
+                            <th data-col="side">Side</th>
+                            <th data-col="qty">Qty</th>
+                            <th data-col="price">Price</th>
+                            <th data-col="type">Type</th>
+                            <th data-col="status">Status</th>
+                            <th data-col="filled">Filled</th>
+                            <th data-col="avgpx">AvgPx</th>
+                            <th data-col="exchange">Exchange</th>
+                            <th data-col="actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="blotter-tbody"></tbody>
@@ -147,12 +155,12 @@
                 <table class="blotter-table">
                     <thead>
                         <tr>
-                            <th>Time</th>
-                            <th>Symbol</th>
-                            <th>Side</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Exchange</th>
+                            <th data-col="time">Time</th>
+                            <th data-col="symbol">Symbol</th>
+                            <th data-col="side">Side</th>
+                            <th data-col="qty">Qty</th>
+                            <th data-col="price">Price</th>
+                            <th data-col="exchange">Exchange</th>
                         </tr>
                     </thead>
                     <tbody id="trades-tbody"></tbody>
@@ -161,7 +169,7 @@
         </div>
 
         <!-- Positions Panel -->
-        <div class="panel" id="positions-panel" style="grid-column:2; grid-row:2;">
+        <div class="panel" id="positions-panel" data-panel="portfolio" style="grid-column:2; grid-row:2;">
             <div class="panel-header">
                 <span>Positions</span>
                 <button class="btn-sm btn-flatten-all" onclick="flattenAll()" title="Close All Positions">FLATTEN ALL</button>
@@ -170,20 +178,20 @@
                 <table class="pos-table">
                     <thead>
                         <tr>
-                            <th>Symbol</th>
-                            <th>Dir</th>
-                            <th>Qty</th>
-                            <th>Avg Cost</th>
-                            <th>Mkt Price</th>
-                            <th>Unrealized PnL</th>
-                            <th>Realized PnL</th>
+                            <th data-col="symbol">Symbol</th>
+                            <th data-col="dir">Dir</th>
+                            <th data-col="qty">Qty</th>
+                            <th data-col="avgcost">Avg Cost</th>
+                            <th data-col="mktprice">Mkt Price</th>
+                            <th data-col="upnl">Unrealized PnL</th>
+                            <th data-col="rpnl">Realized PnL</th>
                         </tr>
                     </thead>
                     <tbody id="pos-tbody"></tbody>
                 </table>
             </div>
             <div class="pnl-chart-container" id="pnl-chart-container">
-                <canvas id="pnl-chart" width="600" height="50"></canvas>
+                <canvas id="pnl-chart"></canvas>
             </div>
             <div class="pos-summary" id="pos-summary">
                 <span>Equity: <strong id="total-equity" class="pnl-zero">0.00</strong></span>
@@ -192,6 +200,14 @@
             </div>
         </div>
     </div>
+
+    <!-- Mobile Tab Bar -->
+    <nav id="mobile-tabs">
+        <button class="mobile-tab active" data-panel="market" onclick="switchMobilePanel('market')">Market</button>
+        <button class="mobile-tab" data-panel="trade" onclick="switchMobilePanel('trade')">Trade</button>
+        <button class="mobile-tab" data-panel="orders" onclick="switchMobilePanel('orders')">Orders</button>
+        <button class="mobile-tab" data-panel="portfolio" onclick="switchMobilePanel('portfolio')">Portfolio</button>
+    </nav>
 </div>
 
 <!-- Amend Modal -->
